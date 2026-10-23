@@ -38,6 +38,7 @@ jobs:
           test "$(uname -m)" = arm64
           brew update
           brew tap --custom-remote cirwel/unitares "file://$GITHUB_WORKSPACE"
+          brew trust cirwel/unitares
           brew install --build-from-source cirwel/unitares/unitares
           brew info --json=v2 unitares > "$RUNNER_TEMP/installed-formula.json"
 

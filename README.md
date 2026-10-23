@@ -16,6 +16,7 @@ Use a regular logged-in macOS account, without `sudo`:
 
 ```sh
 brew tap cirwel/unitares
+brew trust cirwel/unitares
 brew install cirwel/unitares/unitares
 brew pin unitares unitares-lease-plane
 ```
@@ -44,8 +45,12 @@ bound to loopback.
 
 ```sh
 brew services start postgresql@17
-"$(brew --prefix postgresql@17)/bin/createuser" --superuser --pwprompt unitares_local
-"$(brew --prefix postgresql@17)/bin/createdb" --owner=unitares_local unitares_local
+env -i PATH="$PATH" HOME="$HOME" \
+  "$(brew --prefix postgresql@17)/bin/createuser" --host=127.0.0.1 --port=5432 \
+  --username="$(id -un)" --superuser --pwprompt unitares_local
+env -i PATH="$PATH" HOME="$HOME" \
+  "$(brew --prefix postgresql@17)/bin/createdb" --host=127.0.0.1 --port=5432 \
+  --username="$(id -un)" --owner=unitares_local unitares_local
 ```
 
 These commands intentionally fail if those names already exist. Investigate
@@ -75,7 +80,7 @@ arguments. Both UNITARES writers must remain stopped.
   python - "$(brew --prefix unitares)/libexec/app/scripts/install/bootstrap_postgres.sh" <<'PY'
 import os, subprocess, sys
 from urllib.parse import urlsplit, urlunsplit, unquote
-env = os.environ.copy()
+env = {key: value for key, value in os.environ.items() if not key.startswith("PG")}
 url = urlsplit(env["DB_POSTGRES_URL"])
 env["PGPASSWORD"] = unquote(url.password or "")
 authority = url.netloc.split("@", 1)[-1]
