@@ -15,6 +15,7 @@ Install [Homebrew](https://brew.sh/) and Apple's Command Line Tools first.
 Use a regular logged-in macOS account, without `sudo`:
 
 ```sh
+brew update
 brew tap cirwel/unitares
 brew trust cirwel/unitares
 brew install cirwel/unitares/unitares
@@ -117,7 +118,7 @@ for local use. User services need the Homebrew owner's logged-in session.
 ```sh
 unitares status
 unitares logs server --no-follow
-unitares logs lease-plane
+unitares logs lease-plane --no-follow
 unitares stop
 unitares start
 ```

@@ -5,7 +5,10 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  workflow_call:
+
+concurrency:
+  group: native-acceptance-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -48,9 +51,12 @@ jobs:
           prefix="$(brew --prefix unitares)"
           "$prefix/libexec/venv/bin/python" -m pip check
           "$prefix/libexec/venv/bin/python" - "$prefix/libexec/app" <<'PY'
-          import hashlib, json, pathlib, sys
+          import hashlib, json, os, pathlib, sys
           app = pathlib.Path(sys.argv[1])
           manifest = json.loads(pathlib.Path("SOURCES.json").read_text())
+          info = json.loads((pathlib.Path(os.environ["RUNNER_TEMP"]) / "installed-formula.json").read_text())
+          installed = info["formulae"][0]["installed"]
+          assert any(item["version"] == manifest["package"] for item in installed), installed
           for name, expected in manifest["files"].items():
               actual = hashlib.sha256((app / name).read_bytes()).hexdigest()
               assert actual == expected["sha256"], name

@@ -1364,8 +1364,8 @@ new file mode 100644
 +- **Docker Compose:** the current published, supported installation and update
 +  path. It runs the services together and keeps data in Docker volumes. Follow
 +  the [installation manual](../manual/02-install.md#21-docker-quickstart).
-+- **Native macOS:** runs services directly on the Mac. Follow the
-+  [native install playbook](PLAYBOOK.md). The [Homebrew preview tap](https://github.com/cirwel/homebrew-unitares)
++- **Native macOS:** runs services directly on the Mac. For source-checkout installs, follow the
++  [native install playbook](PLAYBOOK.md). For packaged installs, the [Homebrew preview tap](https://github.com/cirwel/homebrew-unitares)
 +  provides the native packages for Apple Silicon Macs. Its README covers
 +  installation and the explicit database setup and upgrade steps.
 +
@@ -1540,7 +1540,7 @@ new file mode 100644
 +  Unknown does not mean empty.
 +- **No UNITARES migration registry:** this does not establish emptiness. Only
 +  if you deliberately created a new empty database, use the
-+  [fresh native bootstrap](PLAYBOOK.md) for it. Keep both writers stopped. The
++  [Homebrew first-time setup](https://github.com/cirwel/homebrew-unitares#first-time-setup) for it. Keep both writers stopped. The
 +  bootstrap script is `scripts/install/bootstrap_postgres.sh` inside
 +  `$(brew --prefix)/opt/unitares/libexec/app`; use the installed package's
 +  Python and PostgreSQL tools. An existing database without the registry may

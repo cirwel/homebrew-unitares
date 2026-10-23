@@ -12,11 +12,11 @@
     },
     "docs/install/CHOOSING_INSTALLATION.md": {
       "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus public tap documentation adaptation",
-      "sha256": "29247ac988cb06b907059716b810c11bb82a9689f191dd3207e72153d4786065"
+      "sha256": "2c8f1de092afbf226c162fc6686f697d0c03dc29a28af7a4bba662fbdc5f727f"
     },
     "docs/install/HOMEBREW_SETUP.md": {
       "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus public tap documentation adaptation",
-      "sha256": "a3abb4e33ec253293be4e35b4766aa4877b89cd018c7ae0c9c85812d438d442d"
+      "sha256": "3445f0cb72b221327b2c2bd1ffb8ce44961e80f469ad424f5684664b920f2e3b"
     },
     "docs/interface-contract.v1.json": {
       "source": "45202e282a009b7ff8987de63265c64696e547b7",
