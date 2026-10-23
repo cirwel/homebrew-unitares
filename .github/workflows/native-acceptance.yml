@@ -1,0 +1,111 @@
+name: Installed Homebrew Acceptance
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  installed-package:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Check out the candidate tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # 3.5.0 predates the harness. Keep the separately reviewed harness pinned;
+      # it operates on the installed keg, not this server source checkout.
+      - name: Check out the reviewed acceptance harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: cirwel/unitares
+          ref: 1cbe3c62a7a1d8fa83776beca6eb317f9aeb618b
+          path: _acceptance
+          persist-credentials: false
+
+      - name: Install the candidate formula and its pinned dependencies
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          brew update
+          brew tap --custom-remote cirwel/unitares "file://$GITHUB_WORKSPACE"
+          brew install --build-from-source cirwel/unitares/unitares
+          brew info --json=v2 unitares > "$RUNNER_TEMP/installed-formula.json"
+
+      - name: Verify installed source provenance and dependencies
+        run: |
+          set -euo pipefail
+          prefix="$(brew --prefix unitares)"
+          "$prefix/libexec/venv/bin/python" -m pip check
+          "$prefix/libexec/venv/bin/python" - "$prefix/libexec/app" <<'PY'
+          import hashlib, json, pathlib, sys
+          app = pathlib.Path(sys.argv[1])
+          manifest = json.loads(pathlib.Path("SOURCES.json").read_text())
+          for name, expected in manifest["files"].items():
+              actual = hashlib.sha256((app / name).read_bytes()).hexdigest()
+              assert actual == expected["sha256"], name
+          print(f"Verified {len(manifest['files'])} installed source hashes")
+          PY
+          brew test cirwel/unitares/apache-age
+          brew test cirwel/unitares/unitares-pgvector
+          brew test cirwel/unitares/unitares-lease-plane
+
+      - name: Provision acceptance services on the disposable CI host
+        run: |
+          set -euo pipefail
+          pg_bin="$(brew --prefix postgresql@17)/bin"
+          pg_data="$RUNNER_TEMP/acceptance-postgres"
+          "$pg_bin/initdb" -D "$pg_data" --auth=trust
+          "$pg_bin/pg_ctl" -D "$pg_data" -l "$RUNNER_TEMP/postgres.log" \
+            -o '-p 55432 -h 127.0.0.1' start -w
+          touch "$RUNNER_TEMP/postgres-owned"
+          "$pg_bin/createdb" -h 127.0.0.1 -p 55432 unitares_acceptance_brew_fresh
+          "$pg_bin/createdb" -h 127.0.0.1 -p 55432 unitares_acceptance_brew_interrupted
+          mkdir "$RUNNER_TEMP/acceptance-redis"
+          "$(brew --prefix redis)/bin/redis-server" --bind 127.0.0.1 --port 56379 \
+            --daemonize yes --dir "$RUNNER_TEMP/acceptance-redis" \
+            --pidfile "$RUNNER_TEMP/acceptance-redis/server.pid" \
+            --logfile "$RUNNER_TEMP/redis.log"
+          "$(brew --prefix redis)/bin/redis-cli" -p 56379 ping
+
+      - name: Require installed fresh bootstrap and interrupted recovery
+        env:
+          UNITARES_ACCEPTANCE_HARNESS: ${{ github.workspace }}/_acceptance/scripts/ci/bootstrap_acceptance.py
+          HOMEBREW_UNITARES_ACCEPTANCE_DIR: ${{ runner.temp }}/homebrew-acceptance
+          HOMEBREW_UNITARES_TEST_FRESH_DB_URL: postgresql://127.0.0.1:55432/unitares_acceptance_brew_fresh
+          HOMEBREW_UNITARES_TEST_RECOVERY_DB_URL: postgresql://127.0.0.1:55432/unitares_acceptance_brew_interrupted
+          HOMEBREW_UNITARES_TEST_FRESH_REDIS_URL: redis://127.0.0.1:56379/0
+          HOMEBREW_UNITARES_TEST_RECOVERY_REDIS_URL: redis://127.0.0.1:56379/1
+        run: scripts/check-installed.sh
+
+      - name: Preserve installed-artifact evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: homebrew-native-acceptance
+          path: |
+            ${{ runner.temp }}/installed-formula.json
+            ${{ runner.temp }}/homebrew-acceptance/*/*.log
+            ${{ runner.temp }}/homebrew-acceptance/*/*.json
+            ${{ runner.temp }}/postgres.log
+            ${{ runner.temp }}/redis.log
+
+      - name: Stop only the services this job started
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/acceptance-redis/server.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/acceptance-redis/server.pid")"
+          fi
+          if [ -f "$RUNNER_TEMP/postgres-owned" ]; then
+            "$(brew --prefix postgresql@17)/bin/pg_ctl" \
+              -D "$RUNNER_TEMP/acceptance-postgres" stop -m smart -w -t 20
+          fi

@@ -1,0 +1,62 @@
+{
+  "package": "3.5.0_5",
+  "release": "v3.5.0",
+  "files": {
+    ".env.example": {
+      "source": "45202e282a009b7ff8987de63265c64696e547b7",
+      "sha256": "778fe631f3c4d9a4a27bc0dba0d6e79fd3ecf109b2f17267ebfd99b0b781f5f0"
+    },
+    "docs/INTERFACE_CONTRACT.md": {
+      "source": "45202e282a009b7ff8987de63265c64696e547b7",
+      "sha256": "1cc05740c00987de6e1691e2c4821530c66f4db4de9fa1cca0a05d068fca1c81"
+    },
+    "docs/install/CHOOSING_INSTALLATION.md": {
+      "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus public tap documentation adaptation",
+      "sha256": "29247ac988cb06b907059716b810c11bb82a9689f191dd3207e72153d4786065"
+    },
+    "docs/install/HOMEBREW_SETUP.md": {
+      "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus public tap documentation adaptation",
+      "sha256": "a3abb4e33ec253293be4e35b4766aa4877b89cd018c7ae0c9c85812d438d442d"
+    },
+    "docs/interface-contract.v1.json": {
+      "source": "45202e282a009b7ff8987de63265c64696e547b7",
+      "sha256": "65c6cba4101b492e5ec300a4b7d1b6f6c80a4f0071e04bf935cf9daa09db2182"
+    },
+    "docs/manual/02-install.md": {
+      "source": "45202e282a009b7ff8987de63265c64696e547b7 (exact PR3043 delta only)",
+      "sha256": "b7a1d8a5ae632d2a1b520808390a23496fa2c2907d5b23797abc582903258521"
+    },
+    "scripts/install/homebrew_services.py": {
+      "source": "c2642bcea367f3567d9225a853415b65cf681f0f",
+      "sha256": "bce7beed02c86fa83ea1350db3e2356e7646c1472a993e6a2848df0858023539"
+    },
+    "scripts/install/launch.sh": {
+      "source": "45202e282a009b7ff8987de63265c64696e547b7",
+      "sha256": "fe07491c2bd4665bb5c958f07f626ec5abfb3b6f271e7b8c670eb5cfb3920eea"
+    },
+    "scripts/install/setup.py": {
+      "source": "45202e282a009b7ff8987de63265c64696e547b7",
+      "sha256": "01b07152dbb12e31c0b0ccba35d146d534860cd138bb8e148e10c65fb702cd2e"
+    },
+    "scripts/unitares": {
+      "source": "c2642bcea367f3567d9225a853415b65cf681f0f",
+      "sha256": "99069fc187827b8706ba66a7c004f076d4030ea8c4dd36057ae3d9690f6d01dc"
+    },
+    "src/interface_contract.py": {
+      "source": "45202e282a009b7ff8987de63265c64696e547b7",
+      "sha256": "1e601601a909a68f3403cb0d2d6ac15251065c703e89718899dbbf68a9733b13"
+    },
+    "src/local_inference_env.py": {
+      "source": "45202e282a009b7ff8987de63265c64696e547b7",
+      "sha256": "20d8c4052ca89b9d9b9e5014ef3bfdb756d7ea8ea352a4ee6a73be76fa0902c0"
+    },
+    "src/mcp_handlers/schemas/core.py": {
+      "source": "45202e282a009b7ff8987de63265c64696e547b7",
+      "sha256": "85e951bd09830885c9069229fabf3334c4c6e2b6b14f1eb4b75879d6105e2dd2"
+    },
+    "src/mcp_handlers/support/inference_registry.py": {
+      "source": "45202e282a009b7ff8987de63265c64696e547b7",
+      "sha256": "ed932ee73e2d57e03eb7d644e5b2121d8dc92fa1df002f72fe3b3848d0a3dcbb"
+    }
+  }
+}
