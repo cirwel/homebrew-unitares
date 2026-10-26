@@ -166,6 +166,11 @@ An identity-count mismatch keeps writers stopped. Inspect the database and
 backup first; if the changed count is expected, continue explicitly with
 `unitares update --resume --accept-identity-change`.
 
+If a package build cannot succeed, `unitares update --abort` restores the prior
+state only while every managed package and the schema still match their recorded
+pre-update versions. Once either changed, abort refuses and `--resume` remains
+mandatory. Direct `brew services` commands bypass the journal guard.
+
 Revision `3.5.0_5` predates this command. Its one-time transition to revision 6
 still requires the documented stop, verified backup, explicit four-package
 unpin/upgrade/repin procedure:

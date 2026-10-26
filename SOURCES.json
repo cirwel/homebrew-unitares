@@ -27,8 +27,8 @@
       "sha256": "b7a1d8a5ae632d2a1b520808390a23496fa2c2907d5b23797abc582903258521"
     },
     "scripts/install/homebrew_update.py": {
-      "source": "0da229bb561120176422ef9bfacbe961cc0c7a9f",
-      "sha256": "302561ac48f804f06a182384d2679a886457855cfd85b23755fab53652681872"
+      "source": "76016cf60d1fa22eef2e4041e125f51968a06792",
+      "sha256": "94553fe1734add953365fa4dc7b39f85c6d0044787d1244298b095412cf86e76"
     },
     "scripts/install/homebrew_services.py": {
       "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus 0da229bb561120176422ef9bfacbe961cc0c7a9f",
@@ -43,8 +43,8 @@
       "sha256": "01b07152dbb12e31c0b0ccba35d146d534860cd138bb8e148e10c65fb702cd2e"
     },
     "scripts/unitares": {
-      "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus 0da229bb561120176422ef9bfacbe961cc0c7a9f",
-      "sha256": "21858322a92262954fb6312b835b87f3a82d222d26a32ec3fa50d9a331ffa8c6"
+      "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus 76016cf60d1fa22eef2e4041e125f51968a06792",
+      "sha256": "864721f578135a4eba30bcaceb71838a052f151267fa4c44b3c908105f87fc35"
     },
     "src/interface_contract.py": {
       "source": "45202e282a009b7ff8987de63265c64696e547b7",
