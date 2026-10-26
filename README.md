@@ -153,8 +153,9 @@ unitares update
 
 The apply command refreshes the tap, stops both writers, verifies quiescence,
 makes and validates a private PostgreSQL backup, temporarily unpins and upgrades
-the exact managed set, reapplies the pins, runs migrations from the new keg and
-restores the prior running/stopped state after verification. If interrupted,
+the exact managed set while holding its installed dependency closure pinned,
+restores the prior pin state, runs migrations from the new keg and restores the
+prior running/stopped state after verification. If interrupted,
 an unfinished journal blocks a separate `unitares start`; the new keg resumes
 the journal, refreshing the backup before a retried package transaction:
 
@@ -179,7 +180,7 @@ unpin/upgrade/repin procedure:
 unitares stop
 # Take and verify the PostgreSQL backup described in the linked procedure.
 brew unpin unitares unitares-lease-plane apache-age unitares-pgvector
-brew upgrade --formula cirwel/unitares/unitares \
+HOMEBREW_NO_INSTALL_CLEANUP=1 brew upgrade --formula cirwel/unitares/unitares \
   cirwel/unitares/unitares-lease-plane cirwel/unitares/apache-age \
   cirwel/unitares/unitares-pgvector
 brew pin unitares unitares-lease-plane apache-age unitares-pgvector
@@ -189,7 +190,8 @@ unitares update --check
 
 Revision 6 changes the package lifecycle but adds no schema migration. Later
 upgrades use the coordinated path above. Reinstalling an older keg does not
-reverse a database migration.
+reverse a database migration. Retain the old kegs and verified backup until the
+new installation has passed its checks.
 
 See the upstream [backup, migration and rollback procedure](https://github.com/cirwel/unitares/blob/v3.5.0/docs/manual/02-install.md#updating-a-bare-metal-or-launchagent-install).
 Use scripts from `$(brew --prefix unitares)/libexec/app` and its sibling

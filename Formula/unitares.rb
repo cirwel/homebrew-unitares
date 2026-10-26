@@ -103,9 +103,10 @@ class Unitares < Formula
       `unitares logs [server|lease-plane]` reads their logs.
       Run `unitares update --check` to inspect the locally cached native plan,
       and `unitares update` for the coordinated stop, verified backup, exact
-      package transaction, migrations, restart and health verification. Resume
-      an interrupted transaction with `unitares update --resume`; before any
-      package or schema change, `unitares update --abort` can restore prior state.
+      package transaction with the installed dependency closure held pinned,
+      migrations, restart and health verification. Resume an interrupted
+      transaction with `unitares update --resume`; before any package or schema
+      change, `unitares update --abort` can restore prior state.
       Embeddings are omitted; search falls back to PostgreSQL full-text search.
     EOS
   end
@@ -2425,7 +2426,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            self.check_update_barrier()
 --- /dev/null
 +++ b/scripts/install/homebrew_update.py
-@@ -0,0 +1,754 @@
+@@ -0,0 +1,860 @@
 +#!/usr/bin/env python3
 +"""Coordinate a safe update of the packaged macOS Homebrew installation.
 +
@@ -2447,6 +2448,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +import json
 +import os
 +from pathlib import Path
++import signal
 +import socket
 +import stat
 +import subprocess
@@ -2762,6 +2764,13 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                except OSError:
 +                    pass
 +            raise Refusal(failure)
++        except KeyboardInterrupt:
++            if created:
++                try:
++                    path.unlink()
++                except OSError:
++                    pass
++            raise
 +        print(f"✓ Verified database backup: {path}")
 +        return path
 +
@@ -2816,6 +2825,60 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                    f"Could not pin {name}; pin the managed UNITARES packages before continuing."
 +                )
 +
++    def pin_dependency_closure(self, state: dict) -> None:
++        temporary = state.get("temporary_dependency_pins")
++        if temporary is None:
++            dependencies = self._brew_process(
++                "deps",
++                "--formula",
++                "--installed",
++                "--union",
++                "--full-name",
++                "--include-build",
++                "--include-optional",
++                "--include-test",
++                *QUALIFIED_FORMULAE,
++            ).stdout.splitlines()
++            pinned = set(
++                self._brew_process("list", "--pinned", "--formula").stdout.splitlines()
++            )
++            temporary = sorted(
++                {
++                    name.strip()
++                    for name in dependencies
++                    if name.strip()
++                    and name.strip().rsplit("/", 1)[-1] not in FORMULAE
++                    and name.strip() not in pinned
++                    and name.strip().rsplit("/", 1)[-1] not in pinned
++                }
++            )
++            state["temporary_dependency_pins"] = temporary
++            self.write_journal(state)
++        if not isinstance(temporary, list) or any(
++            not isinstance(name, str) or not name for name in temporary
++        ):
++            raise Refusal(
++                "The native update journal has an invalid dependency-pin plan."
++            )
++        for name in temporary:
++            result = run([self.brew.brew, "pin", name], env=self.brew.env, timeout=60)
++            if result.returncode:
++                raise Refusal(
++                    f"Could not temporarily pin dependency {name}; no package transaction was attempted."
++                )
++
++    def release_dependency_pins(self, state: dict) -> None:
++        temporary = state.get("temporary_dependency_pins") or []
++        for name in temporary:
++            result = run([self.brew.brew, "unpin", name], env=self.brew.env, timeout=60)
++            if result.returncode:
++                raise Refusal(
++                    f"Could not restore the prior pin state for dependency {name}; writers remain stopped."
++                )
++        if "temporary_dependency_pins" in state:
++            del state["temporary_dependency_pins"]
++            self.write_journal(state)
++
 +    def _upgrade_packages(self) -> None:
 +        self._secure_state_dir(create=True)
 +        log_path = self.state_dir / "native-update-homebrew.log"
@@ -2824,6 +2887,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            HOMEBREW_NO_INSTALL_CLEANUP="1",
 +            HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK="1",
 +        )
++        process = None
 +        try:
 +            fd = os.open(
 +                log_path,
@@ -2831,24 +2895,51 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                0o600,
 +            )
 +            with os.fdopen(fd, "w") as output:
-+                result = subprocess.run(
++                process = subprocess.Popen(
 +                    [self.brew.brew, "upgrade", "--formula", *QUALIFIED_FORMULAE],
 +                    env=env,
 +                    text=True,
 +                    stdout=output,
 +                    stderr=subprocess.STDOUT,
-+                    timeout=3600,
++                    start_new_session=True,
 +                )
-+        except (OSError, subprocess.TimeoutExpired) as exc:
++                returncode = process.wait(timeout=3600)
++        except subprocess.TimeoutExpired as exc:
++            assert process is not None
++            self._terminate_process_group(process)
 +            raise Refusal(
 +                f"The Homebrew package transaction did not finish; inspect {log_path}, "
 +                "then run `unitares update --resume`."
 +            ) from exc
-+        if result.returncode:
++        except KeyboardInterrupt:
++            if process is not None:
++                self._terminate_process_group(process)
++            raise
++        except OSError as exc:
++            raise Refusal(
++                f"The Homebrew package transaction did not finish; inspect {log_path}, "
++                "then run `unitares update --resume`."
++            ) from exc
++        if returncode:
 +            raise Refusal(
 +                f"The Homebrew package transaction failed; inspect {log_path}. Both writers remain "
 +                "stopped; then run `unitares update --resume`."
 +            )
++
++    @staticmethod
++    def _terminate_process_group(process) -> None:
++        try:
++            os.killpg(process.pid, signal.SIGTERM)
++        except OSError:
++            return
++        try:
++            process.wait(timeout=10)
++        except subprocess.TimeoutExpired:
++            try:
++                os.killpg(process.pid, signal.SIGKILL)
++            except OSError:
++                return
++            process.wait()
 +
 +    def install_packages(self, target: dict[str, dict[str, object]]) -> None:
 +        self.managed_pins("unpin")
@@ -2865,7 +2956,20 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                    "Homebrew did not activate the planned versions for: "
 +                    + ", ".join(mismatches)
 +                )
-+        finally:
++        except BaseException as original:
++            try:
++                self.managed_pins("pin")
++            except Refusal as pin_error:
++                if isinstance(original, Refusal):
++                    raise Refusal(
++                        f"{original} Additionally, restoring managed pins failed: {pin_error}"
++                    ) from original
++                print(
++                    f"warning: restoring managed pins failed: {pin_error}",
++                    file=sys.stderr,
++                )
++            raise
++        else:
 +            # Managed packages stay pinned between explicit UNITARES updates so
 +            # a broad `brew upgrade` cannot split the server/extension set.
 +            self.managed_pins("pin")
@@ -2997,6 +3101,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                "`unitares update --resume`."
 +            )
 +        self.managed_pins("pin")
++        self.release_dependency_pins(state)
 +        state["stage"] = "aborted"
 +        state["aborted_at"] = _utc_now()
 +        state["abort_reason"] = "operator abandoned before package or schema change"
@@ -3080,7 +3185,9 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                state["backup"] = str(backup)
 +                self.write_journal(state)
 +            if self.changes(state["target"]):
++                self.pin_dependency_closure(state)
 +                self.install_packages(state["target"])
++                self.release_dependency_pins(state)
 +                state["stage"] = "packages_installed"
 +                self.write_journal(state)
 +                self.reexec()

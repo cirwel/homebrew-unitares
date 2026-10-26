@@ -52,6 +52,7 @@ subprocess.run(
 PY
 
 brew pin unitares unitares-lease-plane apache-age unitares-pgvector
+unitares start
 unitares update --check
 UNITARES_BACKUP_DIR="$evidence/update/backups" unitares update --yes
 
@@ -63,6 +64,8 @@ brew info --json=v2 --formula \
 brew services info unitares unitares-lease-plane --json \
     > "$evidence/update/writers.json"
 cp "$brew_prefix/var/unitares/native-update.json" "$evidence/update/journal.json"
+cp "$brew_prefix/var/unitares/native-update-homebrew.log" \
+    "$evidence/update/native-update-homebrew.log"
 
 "$python" - "$evidence/update" <<'PY'
 import json
@@ -85,12 +88,12 @@ by_name = {item["name"]: item for item in formulae}
 expected = {"unitares", "unitares-lease-plane", "apache-age", "unitares-pgvector"}
 assert set(by_name) == expected, by_name
 assert all(by_name[name]["pinned"] for name in expected), by_name
-lease = by_name["unitares-lease-plane"]
-assert lease["linked_keg"].endswith("_1"), lease
+server = by_name["unitares"]
+assert server["linked_keg"].endswith("_7"), server
 
 writers = json.loads((evidence / "writers.json").read_text())
 assert {item["name"] for item in writers} == {"unitares", "unitares-lease-plane"}
-assert all(not item.get("running") for item in writers), writers
+assert all(item.get("running") for item in writers), writers
 
 url = urlsplit(os.environ["HOMEBREW_UNITARES_TEST_UPDATE_DB_URL"])
 env = {key: value for key, value in os.environ.items() if not key.startswith("PG")}
@@ -116,5 +119,13 @@ marker = subprocess.run(
     text=True,
 ).stdout.strip()
 assert marker == "preserved", marker
+with (evidence / "backup-list.txt").open("w") as output:
+    brew_prefix = Path(subprocess.check_output(["brew", "--prefix"], text=True).strip())
+    subprocess.run(
+        [str(brew_prefix / "opt/postgresql@17/bin/pg_restore"), "--list", str(backup)],
+        check=True,
+        stdout=output,
+        text=True,
+    )
 print("Installed coordinated Homebrew update acceptance passed")
 PY

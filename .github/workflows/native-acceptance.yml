@@ -16,7 +16,7 @@ permissions:
 jobs:
   installed-package:
     runs-on: macos-26
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Check out the candidate tap
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -108,9 +108,8 @@ jobs:
             --command="ALTER ROLE unitares_update PASSWORD 'acceptance_only';"
           "$pg_bin/createdb" --owner=unitares_update unitares_acceptance_brew_update
 
-      # The installed candidate is N. Publish a CI-only N+1 revision of one
-      # managed component in Homebrew's tap clone so N's updater must apply a
-      # real formula transaction while preserving the rest of the managed set.
+      # The installed candidate is N. Publish a CI-only N+1 server revision so
+      # N's updater must replace and re-exec from a new unitares keg.
       - name: Publish a CI-only next managed-package revision
         run: |
           set -euo pipefail
@@ -120,12 +119,12 @@ jobs:
           candidate_sha="$(git -C "$tap_repo" rev-parse HEAD)"
           git clone "$tap_repo" "$target_repo"
           git -C "$target_repo" checkout -B main
-          ruby -0pi -e 'sub("  license \"Apache-2.0\"\n", "  license \"Apache-2.0\"\n  revision 1\n")' \
-            "$target_repo/Formula/unitares-lease-plane.rb"
-          grep -q '^  revision 1$' "$target_repo/Formula/unitares-lease-plane.rb"
+          ruby -0pi -e 'sub("  revision 6\n", "  revision 7\n")' \
+            "$target_repo/Formula/unitares.rb"
+          grep -q '^  revision 7$' "$target_repo/Formula/unitares.rb"
           git -C "$target_repo" config user.name homebrew-native-acceptance
           git -C "$target_repo" config user.email homebrew-native-acceptance@invalid
-          git -C "$target_repo" add Formula/unitares-lease-plane.rb
+          git -C "$target_repo" add Formula/unitares.rb
           git -C "$target_repo" commit -m 'test: publish ephemeral updater target'
           git clone --bare "$target_repo" "$target_remote"
           git -C "$target_remote" symbolic-ref HEAD refs/heads/main
@@ -135,6 +134,8 @@ jobs:
           git -C "$tap_repo" branch --set-upstream-to=origin/main main
           test "$(git -C "$tap_repo" rev-parse HEAD)" != \
             "$(git -C "$tap_repo" rev-parse origin/main)"
+          brew trust cirwel/unitares
+          brew info --formula cirwel/unitares/unitares >/dev/null
 
       - name: Require an installed coordinated package update
         env:
@@ -151,13 +152,16 @@ jobs:
             ${{ runner.temp }}/installed-formula.json
             ${{ runner.temp }}/homebrew-acceptance/*/*.log
             ${{ runner.temp }}/homebrew-acceptance/*/*.json
-            ${{ runner.temp }}/homebrew-acceptance/update/backups/*.dump
+            ${{ runner.temp }}/homebrew-acceptance/update/backup-list.txt
             ${{ runner.temp }}/postgres.log
             ${{ runner.temp }}/redis.log
 
       - name: Stop only the services this job started
         if: always()
         run: |
+          if command -v unitares >/dev/null 2>&1; then
+            unitares stop || true
+          fi
           if [ -f "$RUNNER_TEMP/acceptance-redis/server.pid" ]; then
             kill "$(cat "$RUNNER_TEMP/acceptance-redis/server.pid")"
           fi
