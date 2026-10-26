@@ -27,8 +27,8 @@
       "sha256": "b7a1d8a5ae632d2a1b520808390a23496fa2c2907d5b23797abc582903258521"
     },
     "scripts/install/homebrew_update.py": {
-      "source": "5b6651c570aff1f59ec091e26e1a15064e0b1819",
-      "sha256": "f7e18ee46d560dfd7824b10b1e698d4ebf4ca0d3b4bb8722effe6fe23ed5105d"
+      "source": "1d39d3272f5eb53abbe40e6b7bc0ea01d3842812",
+      "sha256": "2faf230083746f6ce389b28c702c06fdc24d4acf25da76ef6eef49c2978639af"
     },
     "scripts/install/homebrew_services.py": {
       "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus 0da229bb561120176422ef9bfacbe961cc0c7a9f",

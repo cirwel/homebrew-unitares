@@ -105,7 +105,7 @@ class Unitares < Formula
       and `unitares update` for the coordinated stop, verified backup, recorded
       Homebrew package/dependency transaction, migrations, restart and health
       verification. Resume an interrupted transaction with
-      `unitares update --resume`; before any formula or schema change,
+      `unitares update --resume`; before any managed formula or schema change,
       `unitares update --abort` can restore prior state.
       Embeddings are omitted; search falls back to PostgreSQL full-text search.
     EOS
@@ -2426,7 +2426,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            self.check_update_barrier()
 --- /dev/null
 +++ b/scripts/install/homebrew_update.py
-@@ -0,0 +1,802 @@
+@@ -0,0 +1,832 @@
 +#!/usr/bin/env python3
 +"""Coordinate a safe update of the packaged macOS Homebrew installation.
 +
@@ -2913,8 +2913,13 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            raise Refusal(
 +                "The upgraded package did not install an executable unitares CLI."
 +            )
-+        env = dict(os.environ, UNITARES_NATIVE_UPDATE_REEXEC="1")
-+        os.execve(cli, [str(cli), "update", "--resume", "--yes"], env)
++        sys.stdout.flush()
++        sys.stderr.flush()
++        os.execve(
++            cli,
++            [str(cli), "update", "--resume", "--yes"],
++            os.environ.copy(),
++        )
 +
 +    @staticmethod
 +    def _confirm(prompt: str, assume_yes: bool) -> bool:
@@ -3017,25 +3022,31 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                "Restore the configuration recorded for this update before abandoning it."
 +            )
 +        self.managed_pins("pin")
++        live = self.inventory()
++        changed = [
++            name
++            for name in FORMULAE
++            if live[name]["installed"] != state["target"][name]["installed"]
++        ]
++        if changed:
++            raise Refusal(
++                "This update cannot be abandoned because installed versions changed for: "
++                + ", ".join(changed)
++                + ". Repair forward with `unitares update --resume`."
++            )
 +        before = state.get("formula_state_before")
 +        if before is not None:
-+            if not isinstance(before, dict) or self.formula_state() != before:
++            if not isinstance(before, dict):
 +                raise Refusal(
-+                    "This update cannot be abandoned because the installed Homebrew formula inventory changed; "
-+                    "repair forward with `unitares update --resume`."
++                    "The update journal contains an unreadable Homebrew formula inventory."
 +                )
-+        else:
-+            live = self.inventory()
-+            changed = [
-+                name
-+                for name in FORMULAE
-+                if live[name]["installed"] != state["target"][name]["installed"]
-+            ]
-+            if changed:
-+                raise Refusal(
-+                    "This update cannot be abandoned because installed versions changed for: "
-+                    + ", ".join(changed)
-+                    + ". Repair forward with `unitares update --resume`."
++            after = self.formula_state()
++            if after != before:
++                state["formula_state_at_abort"] = after
++                state["formula_changes_at_abort"] = sorted(
++                    name
++                    for name in set(before) | set(after)
++                    if before.get(name) != after.get(name)
 +                )
 +        if "schema_before" in state and self.schema_version() != state["schema_before"]:
 +            raise Refusal(
@@ -3112,8 +3123,25 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            self.verify_quiesced()
 +            if initial_stage == "backed_up":
 +                # A prior package attempt may have been interrupted. Refresh
-+                # the evidence immediately before retrying so even writes from
-+                # an external client between attempts are included.
++                # the tap, target, and evidence immediately before retrying. A
++                # tap may publish a repaired revision while this journal is
++                # stopped, and even external writes between attempts must be
++                # included in the new backup.
++                self.refresh_tap()
++                refreshed = self.inventory()
++                if any(
++                    refreshed[name]["target"] != state["target"][name]["target"]
++                    for name in FORMULAE
++                ):
++                    state.setdefault("superseded_targets", []).append(
++                        {
++                            name: state["target"][name]["target"]
++                            for name in FORMULAE
++                        }
++                    )
++                for name in FORMULAE:
++                    state["target"][name]["target"] = refreshed[name]["target"]
++                self.report(refreshed, local_metadata=False)
 +                previous = state.get("backup")
 +                state["schema_before"] = self.schema_version()
 +                state["agent_count_before"] = self.agent_count()
@@ -3134,6 +3162,8 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                self.write_journal(state)
 +                self.reexec()
 +                raise AssertionError("reexec returned")
++            if "formula_state_before" in state:
++                state["formula_state_after"] = self.formula_state()
 +            state["stage"] = "packages_installed"
 +            self.write_journal(state)
 +        if state["stage"] in {"packages_installed", "migration_failed"}:

@@ -157,7 +157,8 @@ the managed set and any dependencies Homebrew requires, records the complete
 installed-formula inventory before and after, reapplies the managed pins, runs
 migrations from the new keg and restores prior service state. If interrupted,
 an unfinished journal blocks a separate `unitares start`; the new keg resumes
-the journal, refreshing the backup before a retried package transaction:
+the journal, refreshing the tap target and backup before a retried package
+transaction:
 
 ```sh
 unitares update --resume
@@ -168,9 +169,11 @@ backup first; if the changed count is expected, continue explicitly with
 `unitares update --resume --accept-identity-change`.
 
 If a package build cannot succeed, `unitares update --abort` restores the prior
-state only while every managed package and the schema still match their recorded
-pre-update versions. Once either changed, abort refuses and `--resume` remains
-mandatory. Direct `brew services` commands bypass the journal guard.
+state while every managed package and the schema still match their recorded
+pre-update versions. Dependency changes made by the failed transaction are
+retained and recorded. Once a managed package or the schema changed, abort
+refuses and `--resume` remains mandatory. Direct `brew services` commands bypass
+the journal guard.
 
 Revision `3.5.0_5` predates this command. Its one-time transition to revision 6
 still requires the documented stop, verified backup, explicit four-package
