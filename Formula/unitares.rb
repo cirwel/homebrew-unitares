@@ -2426,7 +2426,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            self.check_update_barrier()
 --- /dev/null
 +++ b/scripts/install/homebrew_update.py
-@@ -0,0 +1,886 @@
+@@ -0,0 +1,894 @@
 +#!/usr/bin/env python3
 +"""Coordinate a safe update of the packaged macOS Homebrew installation.
 +
@@ -3161,6 +3161,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            self.write_journal(state)
 +        if state["stage"] == "backed_up":
 +            self.verify_quiesced()
++            package_inventory = state["target"]
 +            if loaded_from_journal:
 +                # Tap metadata can change between any interrupted journal stage
 +                # and this recovery. Resolve it again before package changes and
@@ -3191,6 +3192,13 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                    )
 +                for name in FORMULAE:
 +                    state["target"][name]["target"] = refreshed[name]["target"]
++                package_inventory = {
++                    name: {
++                        **state["target"][name],
++                        "installed": refreshed[name]["installed"],
++                    }
++                    for name in FORMULAE
++                }
 +            if loaded_from_journal and initial_stage == "backed_up":
 +                # A prior package attempt may have been interrupted. Refresh
 +                # evidence immediately before retrying so even external writes
@@ -3205,7 +3213,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                    state.setdefault("superseded_backups", []).append(previous)
 +                state["backup"] = str(backup)
 +                self.write_journal(state)
-+            if self.changes(state["target"]):
++            if self.changes(package_inventory):
 +                if "formula_state_before" not in state:
 +                    state["formula_state_before"] = self.formula_state()
 +                    self.write_journal(state)
