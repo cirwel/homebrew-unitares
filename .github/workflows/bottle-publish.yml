@@ -100,11 +100,14 @@ jobs:
           if git show-ref --verify --quiet "$remote_ref"; then
             expected_remote="$(git rev-parse "$remote_ref")"
             branch_base="$(git merge-base "$TAP_COMMIT" "$remote_ref")"
-            if git log --format='%ae' "$branch_base..$remote_ref" | \
-                grep -Fvx '342195540+unitares-agents[bot]@users.noreply.github.com' >/dev/null; then
-              echo "automation branch contains a non-bot commit; refusing to overwrite it" >&2
-              exit 1
-            fi
+            authors="$(git log --format='%ae' "$branch_base..$remote_ref")"
+            while IFS= read -r author; do
+              if [ -n "$author" ] && \
+                  [ "$author" != '342195540+unitares-agents[bot]@users.noreply.github.com' ]; then
+                echo "automation branch contains a non-bot commit; refusing to overwrite it" >&2
+                exit 1
+              fi
+            done <<< "$authors"
             git checkout -B "$branch" "$remote_ref"
             git reset --hard "$TAP_COMMIT"
             lease="--force-with-lease=refs/heads/$branch:$expected_remote"
