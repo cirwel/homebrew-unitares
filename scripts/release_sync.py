@@ -13,6 +13,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 FORMULA = ROOT / "Formula/unitares.rb"
+LEASE_FORMULA = ROOT / "Formula/unitares-lease-plane.rb"
 SOURCES = ROOT / "SOURCES.json"
 REPOSITORY = "cirwel/unitares"
 REQUIRED_NATIVE_FILES = {
@@ -89,31 +90,12 @@ def validate_release(
             raise ValueError(f"release file lacks required marker: {relative}")
 
 
-def render(
+def _render_formula_release(
     formula: str,
-    manifest: dict[str, object],
-    source_root: Path,
-    release_repo: Path,
     version: str,
-    tag: str,
-    commit: str,
     archive_url: str,
     archive_sha256: str,
-    release_floor_commit: str,
-) -> tuple[str, str]:
-    release_floor_pr = manifest.get("release_floor_pr")
-    if not isinstance(release_floor_pr, int) or release_floor_pr < 1:
-        raise ValueError("SOURCES.json release_floor_pr is missing")
-    validate_release(
-        source_root,
-        release_repo,
-        version,
-        tag,
-        commit,
-        archive_url,
-        archive_sha256,
-        release_floor_commit,
-    )
+) -> str:
     url_match = re.search(r'^  url "(?P<url>[^"]+)"$', formula, re.M)
     if not url_match:
         raise ValueError("formula release URL was not recognized")
@@ -131,7 +113,6 @@ def render(
         raise ValueError(
             f"release {version} equals a revised formula and would lower its package version"
         )
-
     rendered = re.sub(r'^  url ".*"$', f'  url "{archive_url}"', formula, count=1, flags=re.M)
     rendered = re.sub(
         r'^  sha256 "[0-9a-f]{64}"$',
@@ -141,24 +122,46 @@ def render(
         flags=re.M,
     )
     if advancing:
-        rendered = re.sub(
-            r"^  revision [0-9]+\n", "", rendered, count=1, flags=re.M
-        )
-        rendered = re.sub(
-            r"\n  bottle do\n(?:    .*\n)+?  end\n",
-            "\n",
-            rendered,
-            count=1,
-        )
+        rendered = re.sub(r"^  revision [0-9]+\n", "", rendered, count=1, flags=re.M)
+        rendered = re.sub(r"\n  bottle do\n(?:    .*\n)+?  end\n", "\n", rendered, count=1)
         if "\n  bottle do\n" in rendered:
             raise ValueError("formula still contains a bottle block from the prior version")
         rendered = re.sub(
-            r'(^  license .+\n)\n+(?=  depends_on)',
-            r'\1\n',
-            rendered,
-            count=1,
-            flags=re.M,
+            r'(^  license .+\n)\n+(?=  depends_on)', r'\1\n', rendered, count=1, flags=re.M
         )
+    return rendered
+
+
+def render(
+    formula: str,
+    lease_formula: str,
+    manifest: dict[str, object],
+    source_root: Path,
+    release_repo: Path,
+    version: str,
+    tag: str,
+    commit: str,
+    archive_url: str,
+    archive_sha256: str,
+    release_floor_commit: str,
+) -> tuple[str, str, str]:
+    release_floor_pr = manifest.get("release_floor_pr")
+    if not isinstance(release_floor_pr, int) or release_floor_pr < 1:
+        raise ValueError("SOURCES.json release_floor_pr is missing")
+    validate_release(
+        source_root,
+        release_repo,
+        version,
+        tag,
+        commit,
+        archive_url,
+        archive_sha256,
+        release_floor_commit,
+    )
+    rendered = _render_formula_release(formula, version, archive_url, archive_sha256)
+    rendered_lease = _render_formula_release(
+        lease_formula, version, archive_url, archive_sha256
+    )
     rendered = re.sub(
         r"\n  # Reviewed setup/model backports; remove when the release includes them\.\n"
         r"  patch :DATA\n",
@@ -186,7 +189,7 @@ def render(
         "release_floor_pr": release_floor_pr,
         "files": rendered_files,
     }
-    return rendered, json.dumps(rendered_manifest, indent=2) + "\n"
+    return rendered, rendered_lease, json.dumps(rendered_manifest, indent=2) + "\n"
 
 
 def main() -> int:
@@ -202,8 +205,9 @@ def main() -> int:
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     try:
-        rendered_formula, rendered_sources = render(
+        rendered_formula, rendered_lease_formula, rendered_sources = render(
             FORMULA.read_text(),
+            LEASE_FORMULA.read_text(),
             json.loads(SOURCES.read_text()),
             args.source_root.resolve(),
             args.release_repo.resolve(),
@@ -217,13 +221,21 @@ def main() -> int:
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
     if args.check:
-        if FORMULA.read_text() != rendered_formula or SOURCES.read_text() != rendered_sources:
-            raise SystemExit("formula or source manifest is stale for this release")
+        if (
+            FORMULA.read_text() != rendered_formula
+            or LEASE_FORMULA.read_text() != rendered_lease_formula
+            or SOURCES.read_text() != rendered_sources
+        ):
+            raise SystemExit("formulae or source manifest are stale for this release")
         print("formula and source manifest match the release")
         return 0
     FORMULA.write_text(rendered_formula)
+    LEASE_FORMULA.write_text(rendered_lease_formula)
     SOURCES.write_text(rendered_sources)
-    print(f"rendered {FORMULA.relative_to(ROOT)} and {SOURCES.relative_to(ROOT)}")
+    print(
+        f"rendered {FORMULA.relative_to(ROOT)}, {LEASE_FORMULA.relative_to(ROOT)} "
+        f"and {SOURCES.relative_to(ROOT)}"
+    )
     return 0
 
 

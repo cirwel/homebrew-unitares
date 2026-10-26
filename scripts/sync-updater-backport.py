@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,10 +21,44 @@ def render(source: Path, commit: str, release_floor_pr: int) -> tuple[str, str]:
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise SystemExit("--source-commit must be a full lowercase Git commit")
     payload = source.read_bytes()
+    repository = subprocess.run(
+        ["git", "-C", str(source.parent), "rev-parse", "--show-toplevel"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    relative = source.resolve().relative_to(Path(repository).resolve())
+    committed = subprocess.run(
+        ["git", "-C", repository, "show", f"{commit}:{relative.as_posix()}"],
+        check=True,
+        capture_output=True,
+    ).stdout
+    if committed != payload:
+        raise SystemExit("--source does not match the recorded commit blob")
     if not payload.endswith(b"\n"):
         raise SystemExit(f"{source} must end with a newline")
     lines = payload.decode().splitlines(keepends=True)
     formula = FORMULA.read_text()
+    bottle = re.search(r"\n  bottle do\n(?:    .*\n)+?  end\n", formula)
+    if bottle:
+        formula = formula[: bottle.start()] + "\n" + formula[bottle.end() :]
+        revision = re.search(r"^  revision ([0-9]+)$", formula, re.M)
+        if revision:
+            next_revision = int(revision.group(1)) + 1
+            formula = (
+                formula[: revision.start()]
+                + f"  revision {next_revision}"
+                + formula[revision.end() :]
+            )
+        else:
+            license_line = re.search(r"^  license .+$", formula, re.M)
+            if not license_line:
+                raise SystemExit("Formula/unitares.rb has no license line for revision")
+            formula = (
+                formula[: license_line.end()]
+                + "\n  revision 1"
+                + formula[license_line.end() :]
+            )
     try:
         prefix = formula[: formula.index(PATCH_MARKER)]
     except ValueError as exc:

@@ -239,7 +239,8 @@ The coordinated upstream
 [UNITARES change](https://github.com/cirwel/unitares/pull/3086) adds a guarded
 release workflow that builds or verifies that immutable asset, runs this tap's
 offline renderer, and opens or updates `auto/homebrew-release-sync` as a draft
-PR. The renderer refuses mutable GitHub source archives, downgrades, missing
+PR. The renderer advances both `unitares` and its release-coupled lease-plane
+formula. It refuses mutable GitHub source archives, downgrades, missing
 tracked sources, or removal of the v3.5.0 DATA backport before the release
 commit contains the manifest's reviewed backport floor. It never marks the PR
 ready or merges it. This repository's
@@ -254,6 +255,12 @@ write credential. A separate protected
 commit, metadata and every checksum, publishes non-overwriting prerelease
 assets, and opens a draft formula PR. Publication never authorizes merge; the
 installed acceptance job must pass again against the exact bottle formula.
-These jobs fail closed until the operator configures their named environments
-and sets `UNITARES_HOMEBREW_RELEASE_SYNC_ENABLED` or
+Any later updater backport strips the `unitares` bottle block and increments
+the formula revision; acceptance also requires bottles whenever a bottle block
+is present, so an obsolete bottle cannot silently mask formula changes.
+These jobs fail closed until the operator configures their named environments,
+adds the matching environment-scoped arming secret
+(`UNITARES_HOMEBREW_RELEASE_SYNC_ARMED` or
+`UNITARES_HOMEBREW_BOTTLES_ARMED`) with value `true`, and sets
+`UNITARES_HOMEBREW_RELEASE_SYNC_ENABLED` or
 `UNITARES_HOMEBREW_BOTTLES_ENABLED` to `true` in the relevant repository.

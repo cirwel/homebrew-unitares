@@ -33,6 +33,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Verify protected environment arming secret
+        env:
+          ARMED: ${{ secrets.UNITARES_HOMEBREW_BOTTLES_ARMED }}
+        run: test "$ARMED" = true
+
       - name: Mint a repository-scoped App token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         id: app
@@ -124,6 +129,8 @@ jobs:
               --title "Apple Silicon bottles $BOTTLE_TAG" \
               --notes "Built from tap commit $TAP_COMMIT by workflow run $BUILD_RUN_ID."
           fi
+          git fetch --force --no-tags origin "refs/tags/$BOTTLE_TAG"
+          test "$(git rev-parse 'FETCH_HEAD^{commit}')" = "$TAP_COMMIT"
           mkdir "$RUNNER_TEMP/publish-bottles"
           while IFS=$'\t' read -r local_name published_name; do
             [[ "$local_name" =~ ^[A-Za-z0-9._+-]+$ ]]

@@ -42,7 +42,9 @@ jobs:
           brew update
           brew tap --custom-remote cirwel/unitares "file://$GITHUB_WORKSPACE"
           brew trust cirwel/unitares
-          if [ "${GITHUB_HEAD_REF:-}" = auto/homebrew-bottles ]; then
+          expect_bottles=false
+          if grep -q '^  bottle do$' Formula/unitares.rb; then
+            expect_bottles=true
             brew install cirwel/unitares/unitares
           else
             brew install --build-from-source cirwel/unitares/unitares
@@ -54,7 +56,7 @@ jobs:
             cirwel/unitares/apache-age \
             cirwel/unitares/unitares-pgvector \
             > "$RUNNER_TEMP/installed-managed-formulae.json"
-          if [ "${GITHUB_HEAD_REF:-}" = auto/homebrew-bottles ]; then
+          if [ "$expect_bottles" = true ]; then
             jq -e '.formulae | length == 4 and all(.installed[-1].poured_from_bottle == true)' \
               "$RUNNER_TEMP/installed-managed-formulae.json"
           fi
