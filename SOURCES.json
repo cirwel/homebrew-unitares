@@ -1,66 +1,66 @@
 {
-  "package": "3.5.0_6",
-  "release": "v3.5.0",
+  "package": "3.6.0",
+  "release": "v3.6.0",
   "release_floor_pr": 3086,
   "files": {
     ".env.example": {
-      "source": "45202e282a009b7ff8987de63265c64696e547b7",
-      "sha256": "778fe631f3c4d9a4a27bc0dba0d6e79fd3ecf109b2f17267ebfd99b0b781f5f0"
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
+      "sha256": "b965fbe68d7ef0ad9b95d077c020345e89cd5c5ea926f31986eda2adcc55942c"
     },
     "docs/INTERFACE_CONTRACT.md": {
-      "source": "45202e282a009b7ff8987de63265c64696e547b7",
-      "sha256": "1cc05740c00987de6e1691e2c4821530c66f4db4de9fa1cca0a05d068fca1c81"
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
+      "sha256": "6b83c072467b5fa36b0dbb44cf05051d10873f80bd4919767b2362c3232fb1c9"
     },
     "docs/install/CHOOSING_INSTALLATION.md": {
-      "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus public tap documentation adaptation",
-      "sha256": "2c8f1de092afbf226c162fc6686f697d0c03dc29a28af7a4bba662fbdc5f727f"
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
+      "sha256": "7a0c7a299904581e814a642a53cf9740a45c84ddd6d9d65069308028a78d6604"
     },
     "docs/install/HOMEBREW_SETUP.md": {
-      "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus public tap documentation adaptation",
-      "sha256": "3445f0cb72b221327b2c2bd1ffb8ce44961e80f469ad424f5684664b920f2e3b"
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
+      "sha256": "d6e61354d3716b7b938b4405d5a822a24bd884d3d762901b60db1d95acee0538"
     },
     "docs/interface-contract.v1.json": {
-      "source": "45202e282a009b7ff8987de63265c64696e547b7",
-      "sha256": "65c6cba4101b492e5ec300a4b7d1b6f6c80a4f0071e04bf935cf9daa09db2182"
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
+      "sha256": "6de32952a69cb9ac58895698958a6116a27161486c238e86fccc86bbeb3f1cca"
     },
     "docs/manual/02-install.md": {
-      "source": "45202e282a009b7ff8987de63265c64696e547b7 (exact PR3043 delta only)",
-      "sha256": "b7a1d8a5ae632d2a1b520808390a23496fa2c2907d5b23797abc582903258521"
-    },
-    "scripts/install/homebrew_update.py": {
-      "source": "cirwel/unitares#3086 @ f57a147b22f10974d803a1b1cbef8d8d70ab47a1",
-      "sha256": "8fdd316df4b361880a895f2e1eb100de78f79b89004036db903c9b519da322e1"
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
+      "sha256": "424e8270108b224905086fad3aef8f3679fa669dc4123bb41f161b1874b94a54"
     },
     "scripts/install/homebrew_services.py": {
-      "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus cirwel/unitares#3086 @ 0da229bb561120176422ef9bfacbe961cc0c7a9f",
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
       "sha256": "46aa1debd9b79bf5272046dfd40ffa355b4afe63c2d8dd70a1cddf33d620a2bb"
     },
+    "scripts/install/homebrew_update.py": {
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
+      "sha256": "8fdd316df4b361880a895f2e1eb100de78f79b89004036db903c9b519da322e1"
+    },
     "scripts/install/launch.sh": {
-      "source": "45202e282a009b7ff8987de63265c64696e547b7",
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
       "sha256": "fe07491c2bd4665bb5c958f07f626ec5abfb3b6f271e7b8c670eb5cfb3920eea"
     },
     "scripts/install/setup.py": {
-      "source": "45202e282a009b7ff8987de63265c64696e547b7",
-      "sha256": "01b07152dbb12e31c0b0ccba35d146d534860cd138bb8e148e10c65fb702cd2e"
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
+      "sha256": "90a738b5f0362a15bb8fd22d5e7225e64ec14cbf7eee67dc850b2645dee514c2"
     },
     "scripts/unitares": {
-      "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus cirwel/unitares#3086 @ c9b8ea95e562c8d4f0d8fa231898238ca0fbef0d",
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
       "sha256": "589bd82fe9d5505609c6380f72ac46374732ee47b3fa77aedbc8b9289b82c54a"
     },
     "src/interface_contract.py": {
-      "source": "45202e282a009b7ff8987de63265c64696e547b7",
-      "sha256": "1e601601a909a68f3403cb0d2d6ac15251065c703e89718899dbbf68a9733b13"
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
+      "sha256": "7e9a511681a57085d7e8f68c3372de25f184612660077605e20e45e41ba28ae3"
     },
     "src/local_inference_env.py": {
-      "source": "45202e282a009b7ff8987de63265c64696e547b7",
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
       "sha256": "20d8c4052ca89b9d9b9e5014ef3bfdb756d7ea8ea352a4ee6a73be76fa0902c0"
     },
     "src/mcp_handlers/schemas/core.py": {
-      "source": "45202e282a009b7ff8987de63265c64696e547b7",
-      "sha256": "85e951bd09830885c9069229fabf3334c4c6e2b6b14f1eb4b75879d6105e2dd2"
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
+      "sha256": "8d8c72e0dcc4c2a9906f8126fc89e298a7776c1ad22e9128f6bd055744643b70"
     },
     "src/mcp_handlers/support/inference_registry.py": {
-      "source": "45202e282a009b7ff8987de63265c64696e547b7",
+      "source": "ef8dc3b31ce5848da90db6e7a538374bb686298f",
       "sha256": "ed932ee73e2d57e03eb7d644e5b2121d8dc92fa1df002f72fe3b3848d0a3dcbb"
     }
   }

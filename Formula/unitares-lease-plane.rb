@@ -1,8 +1,8 @@
 class UnitaresLeasePlane < Formula
   desc "Coordination lease service for UNITARES"
   homepage "https://github.com/cirwel/unitares"
-  url "https://github.com/cirwel/unitares/archive/refs/tags/v3.5.0.tar.gz"
-  sha256 "69661373078695bf222479ce6f86a45f16d38922b2193dec25fd25bb07997fff"
+  url "https://github.com/cirwel/unitares/releases/download/v3.6.0/unitares-3.6.0.tar.gz"
+  sha256 "3104c35a1497d1c5eadfd0309dd7ab850f735790f9de0ed54b29a305fbf6b82f"
   license "Apache-2.0"
   depends_on "elixir" => :build
   depends_on "erlang" => :build
