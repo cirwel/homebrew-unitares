@@ -191,9 +191,11 @@ Cleanup verifies each existing indexed dump again, counts only those verified
 files toward the retention floor, protects any dump referenced by an update
 journal, and records deletions in its own resumable journal. Missing-file index
 records appear in the dry run and are reconciled only with `--yes`. It never
-removes Homebrew kegs; `brew cleanup` remains a separate package-manager
-decision after the new installation and database have been independently
-verified.
+deletes an unindexed file. The dry run records the candidate set and policy
+privately, so `--yes` resumes the exact reviewed plan while rechecking newly
+protected backups. It never removes Homebrew kegs; `brew cleanup` remains a
+separate package-manager decision after the new installation and database have
+been independently verified.
 
 Revision `3.5.0_5` predates this command. Its one-time transition to revision 6
 still requires the documented stop, verified backup, explicit four-package
