@@ -27,8 +27,8 @@
       "sha256": "b7a1d8a5ae632d2a1b520808390a23496fa2c2907d5b23797abc582903258521"
     },
     "scripts/install/homebrew_update.py": {
-      "source": "cirwel/unitares#3086 @ a7f4a9476acbc35896d958da9982da1b5c90457c",
-      "sha256": "eb5180d8c9f1364d0164651bb51dee54045b48380b0169cbc92a441a386e4b5d"
+      "source": "cirwel/unitares#3086 @ 69792806eaf5cac3b38bc63c5b6e2db0ba553247",
+      "sha256": "474c32ff0bd17758c7f123cd9e594ac3aad1ed977af34c164851fd3c7c424de0"
     },
     "scripts/install/homebrew_services.py": {
       "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus cirwel/unitares#3086 @ 0da229bb561120176422ef9bfacbe961cc0c7a9f",

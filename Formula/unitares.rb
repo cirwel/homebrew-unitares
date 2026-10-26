@@ -2426,7 +2426,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            self.check_update_barrier()
 --- /dev/null
 +++ b/scripts/install/homebrew_update.py
-@@ -0,0 +1,894 @@
+@@ -0,0 +1,895 @@
 +#!/usr/bin/env python3
 +"""Coordinate a safe update of the packaged macOS Homebrew installation.
 +
@@ -3223,6 +3223,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                self.write_journal(state)
 +                self.reexec()
 +                raise AssertionError("reexec returned")
++            self.managed_pins("pin")
 +            if "formula_state_before" in state:
 +                state["formula_state_after"] = self.formula_state()
 +            state["stage"] = "packages_installed"
