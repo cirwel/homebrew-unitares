@@ -23,10 +23,11 @@ brew install cirwel/unitares/unitares
 brew pin unitares unitares-lease-plane apache-age unitares-pgvector
 ```
 
-The server package is **3.5.0 revision 6** (`3.5.0_6`); its upstream runtime
-version still reports `3.5.0`. Revision 6 adds the coordinated native updater
-to the validated setup and optional-model backports.
-[SOURCES.json](SOURCES.json) records the backports and installed file hashes.
+The current preview package tracks the upstream release recorded in
+[SOURCES.json](SOURCES.json). The manifest records the exact source commit and
+installed-file hashes, while both release-coupled formulae pin the same
+SHA-256-verified release asset. The coordinated native updater is included in
+the release itself.
 
 Choose one primary installation per Mac. A Docker/Colima deployment already
 using the standard ports must be migrated deliberately before native startup.
@@ -110,7 +111,7 @@ writers and waits for deep health. It never applies migrations.
 
 MCP endpoint: `http://127.0.0.1:8767/mcp/`.
 Dashboard: `http://127.0.0.1:8767/dashboard/`.
-See the upstream [MCP client guide](https://github.com/cirwel/unitares/blob/v3.5.0/docs/integration/MCP_CLIENTS.md)
+See the upstream [MCP client guide](https://github.com/cirwel/unitares/blob/master/docs/integration/MCP_CLIENTS.md)
 to connect a client. These endpoints bind to loopback; Tailscale is not required
 for local use. User services need the Homebrew owner's logged-in session.
 
@@ -213,12 +214,12 @@ unitares update --check
 # If both writers were running before the transition: unitares start
 ```
 
-Revision 6 changes the package lifecycle but adds no schema migration. Later
-upgrades use the coordinated path above. Reinstalling an older keg does not
-reverse a database migration. Retain the old kegs and verified backup until the
-new installation has passed its checks.
+The 3.5.0 revision 6 transition changed the package lifecycle but added no
+schema migration. Later upgrades use the coordinated path above. Reinstalling
+an older keg does not reverse a database migration. Retain the old kegs and
+verified backup until the new installation has passed its checks.
 
-See the upstream [backup, migration and rollback procedure](https://github.com/cirwel/unitares/blob/v3.5.0/docs/manual/02-install.md#updating-a-bare-metal-or-launchagent-install).
+See the upstream [backup, migration and rollback procedure](https://github.com/cirwel/unitares/blob/master/docs/manual/02-install.md#updating-a-bare-metal-or-launchagent-install).
 Use scripts from `$(brew --prefix unitares)/libexec/app` and its sibling
 `venv/bin/python`; do not run source-checkout Git or pip update commands in a
 Homebrew keg. Reinstalling an older keg does not reverse a database migration.
@@ -237,13 +238,13 @@ prior VM/M1 evidence and its limits.
 Stable upstream releases own a deterministic `unitares-VERSION.tar.gz` asset.
 The coordinated upstream
 [UNITARES change](https://github.com/cirwel/unitares/pull/3086) adds a guarded
-release workflow that builds or verifies that immutable asset, runs this tap's
-offline renderer, and opens or updates `auto/homebrew-release-sync` as a draft
-PR. The renderer advances both `unitares` and its release-coupled lease-plane
-formula. It refuses mutable GitHub source archives, downgrades, missing
-tracked sources, or removal of the v3.5.0 DATA backport before the release
-commit contains the manifest's reviewed backport floor. It never marks the PR
-ready or merges it. This repository's
+release workflow that builds and SHA-256-pins that tag-named asset, runs this
+tap's offline renderer, and opens or updates `auto/homebrew-release-sync` as a
+draft PR. The renderer advances both `unitares` and its release-coupled
+lease-plane formula. It refuses mutable GitHub source archives, downgrades,
+missing tracked sources, or removal of an embedded `DATA` backport before the
+release commit contains the manifest's reviewed backport floor. It never marks
+the PR ready or merges it. This repository's
 manual [draft release sync](.github/workflows/release-sync.yml) is a protected
 recovery path using the same renderer and evidence contract.
 

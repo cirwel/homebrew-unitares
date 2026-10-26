@@ -57,7 +57,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Verify the tag and immutable release asset
+      - name: Verify the tag and SHA-256-pinned release asset
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
@@ -187,9 +187,9 @@ jobs:
           This draft updates the tap to UNITARES $TAG at $COMMIT.
 
           Evidence:
-          - immutable release asset: $UNITARES_ARCHIVE_URL
+          - SHA-256-pinned release asset: $UNITARES_ARCHIVE_URL
           - SHA-256: $ARCHIVE_SHA256
-          - the renderer verifies the release contains the native updater and all tracked sources before it may remove any remaining v3.5.0 DATA backport
+          - the renderer verifies the release contains the native updater and all tracked sources before it may remove any remaining embedded DATA backport
 
           Keep this draft until installed Apple Silicon acceptance passes. This workflow never publishes bottles or authorizes merge.
           EOF

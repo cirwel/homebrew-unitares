@@ -1,9 +1,9 @@
 # Native package validation
 
-The current preview package is server `3.5.0` revision 6. It uses the v3.5.0
-archive plus the 15 reviewed installed-file backports recorded with source
-provenance and SHA-256 digests in [SOURCES.json](SOURCES.json). Revision 6 adds
-the coordinated native updater; the formula remains restricted to Apple Silicon
+The current preview package tracks the upstream release and source commit in
+[SOURCES.json](SOURCES.json). The manifest also records SHA-256 digests for
+every tracked installed file. Both release-coupled formulae pin the same
+SHA-256-verified release asset; `unitares` remains restricted to Apple Silicon
 macOS and builds from source.
 
 Before publication, installed revision 4 passed on an isolated Apple Silicon
