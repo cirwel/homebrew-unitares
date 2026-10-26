@@ -2432,7 +2432,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            self.check_update_barrier()
 --- /dev/null
 +++ b/scripts/install/homebrew_update.py
-@@ -0,0 +1,1285 @@
+@@ -0,0 +1,1302 @@
 +#!/usr/bin/env python3
 +"""Coordinate a safe update of the packaged macOS Homebrew installation.
 +
@@ -2885,6 +2885,19 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            self._verify_indexed_backup(entry, backup_dir)
 +            verified_entries.append(entry)
 +        cleanup = self.read_cleanup_journal()
++        if (
++            apply
++            and cleanup
++            and cleanup["stage"] != "complete"
++            and (
++                retain != cleanup["retain"]
++                or older_than_days != cleanup["older_than_days"]
++            )
++        ):
++            raise Refusal(
++                "Backup-cleanup policy differs from the recorded plan; re-run the "
++                "dry run with these options, then repeat it with --yes."
++            )
 +        resume_plan = bool(
 +            cleanup
 +            and cleanup["stage"] != "complete"
@@ -2916,7 +2929,6 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            candidate_names.extend(
 +                sorted(value for value in stale_names if value not in protected)
 +            )
-+            cleanup = None
 +
 +        for value in candidate_names:
 +            if value not in entries:
@@ -2939,6 +2951,11 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                )
 +
 +        if not candidate_names:
++            if cleanup and cleanup["stage"] == "planned" and not resume_plan:
++                cleanup["stage"] = "complete"
++                cleanup["completed_at"] = _utc_now()
++                cleanup["superseded_by_empty_plan"] = True
++                self._write_private_json(self.cleanup_journal_path, cleanup)
 +            print(
 +                f"No indexed backups are eligible; retaining {len(verified_entries)} verified backup(s), including the newest {policy_retain} and anything newer than {policy_age} day(s)."
 +            )
