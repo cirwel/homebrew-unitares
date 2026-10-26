@@ -2432,7 +2432,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            self.check_update_barrier()
 --- /dev/null
 +++ b/scripts/install/homebrew_update.py
-@@ -0,0 +1,1326 @@
+@@ -0,0 +1,1327 @@
 +#!/usr/bin/env python3
 +"""Coordinate a safe update of the packaged macOS Homebrew installation.
 +
@@ -2902,7 +2902,8 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            if cleanup["stage"] == "deleting":
 +                raise Refusal(
 +                    "An interrupted backup cleanup must resume with its recorded "
-+                    f"policy: --retain-backups {cleanup['retain']} "
++                    "policy: unitares update --cleanup-backups "
++                    f"--retain-backups {cleanup['retain']} "
 +                    f"--older-than-days {cleanup['older_than_days']} --yes."
 +                )
 +            raise Refusal(
