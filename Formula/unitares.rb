@@ -2426,7 +2426,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            self.check_update_barrier()
 --- /dev/null
 +++ b/scripts/install/homebrew_update.py
-@@ -0,0 +1,880 @@
+@@ -0,0 +1,886 @@
 +#!/usr/bin/env python3
 +"""Coordinate a safe update of the packaged macOS Homebrew installation.
 +
@@ -3106,6 +3106,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +        accept_identity_change: bool = False,
 +        assume_yes: bool = False,
 +    ) -> int:
++        loaded_from_journal = state is None
 +        state = state or self.read_journal(required=True)
 +        assert state is not None
 +        initial_stage = state["stage"]
@@ -3160,12 +3161,10 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            self.write_journal(state)
 +        if state["stage"] == "backed_up":
 +            self.verify_quiesced()
-+            if initial_stage == "backed_up":
-+                # A prior package attempt may have been interrupted. Refresh
-+                # the tap, target, and evidence immediately before retrying. A
-+                # tap may publish a repaired revision while this journal is
-+                # stopped, and even external writes between attempts must be
-+                # included in the new backup.
++            if loaded_from_journal:
++                # Tap metadata can change between any interrupted journal stage
++                # and this recovery. Resolve it again before package changes and
++                # require renewed consent for a different target.
 +                self.refresh_tap()
 +                self.repair_managed_links()
 +                refreshed = self.inventory()
@@ -3178,8 +3177,11 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                    "The tap target changed since this update began. Continue with the refreshed package set?",
 +                    assume_yes,
 +                ):
-+                    print("Target change was not accepted; writers remain stopped.")
-+                    return 0
++                    raise Refusal(
++                        "Target change was not accepted; writers remain stopped. Review and run "
++                        "`unitares update --resume` to confirm it, or `unitares update --abort` "
++                        "to restore prior state while abort remains safe."
++                    )
 +                if targets_changed:
 +                    state.setdefault("superseded_targets", []).append(
 +                        {
@@ -3189,6 +3191,10 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                    )
 +                for name in FORMULAE:
 +                    state["target"][name]["target"] = refreshed[name]["target"]
++            if loaded_from_journal and initial_stage == "backed_up":
++                # A prior package attempt may have been interrupted. Refresh
++                # evidence immediately before retrying so even external writes
++                # between attempts are included in the new backup.
 +                previous = state.get("backup")
 +                state["schema_before"] = self.schema_version()
 +                state["agent_count_before"] = self.agent_count()
