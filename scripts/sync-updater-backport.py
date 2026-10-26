@@ -40,7 +40,7 @@ def render(source: Path, commit: str, release_floor_pr: int) -> tuple[str, str]:
         raise SystemExit("--release-floor-pr must be a positive pull request number")
     manifest["release_floor_pr"] = release_floor_pr
     record = manifest["files"]["scripts/install/homebrew_update.py"]
-    record["source"] = f"cirwel/unitares#3086 @ {commit}"
+    record["source"] = f"cirwel/unitares#{release_floor_pr} @ {commit}"
     record["sha256"] = hashlib.sha256(payload).hexdigest()
     rendered_sources = json.dumps(manifest, indent=2) + "\n"
     return rendered_formula, rendered_sources

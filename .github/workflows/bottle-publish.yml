@@ -114,7 +114,11 @@ jobs:
           else
             git checkout -B "$branch" "$TAP_COMMIT"
           fi
-          if ! gh release view "$BOTTLE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if gh release view "$BOTTLE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --json targetCommitish,isPrerelease > "$RUNNER_TEMP/bottle-release.json" 2>/dev/null; then
+            test "$(jq -r .targetCommitish "$RUNNER_TEMP/bottle-release.json")" = "$TAP_COMMIT"
+            test "$(jq -r .isPrerelease "$RUNNER_TEMP/bottle-release.json")" = true
+          else
             gh release create "$BOTTLE_TAG" --repo "$GITHUB_REPOSITORY" \
               --target "$TAP_COMMIT" --prerelease \
               --title "Apple Silicon bottles $BOTTLE_TAG" \
@@ -129,6 +133,7 @@ jobs:
           done < <(jq -r '.[] | [.local_filename, .filename] | @tsv' \
             "$RUNNER_TEMP/bottles/asset-map.json")
           test "$(find "$RUNNER_TEMP/publish-bottles" -maxdepth 1 -name '*.bottle.tar.gz' | wc -l)" -eq 4
+          missing_assets=()
           for asset in "$RUNNER_TEMP"/publish-bottles/*.bottle.tar.gz; do
             name=$(basename "$asset")
             existing="$RUNNER_TEMP/existing-$name"
@@ -139,8 +144,11 @@ jobs:
                 exit 1
               }
             else
-              gh release upload "$BOTTLE_TAG" "$asset" --repo "$GITHUB_REPOSITORY"
+              missing_assets+=("$asset")
             fi
+          done
+          for asset in "${missing_assets[@]}"; do
+            gh release upload "$BOTTLE_TAG" "$asset" --repo "$GITHUB_REPOSITORY"
           done
           git apply --index --include='Formula/*.rb' \
             "$RUNNER_TEMP/bottles/formula-bottles.patch"
