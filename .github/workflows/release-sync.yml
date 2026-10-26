@@ -81,9 +81,20 @@ jobs:
           echo "UNITARES_RELEASE_ROOT=$release_root" >> "$GITHUB_ENV"
           echo "UNITARES_ARCHIVE_URL=https://github.com/cirwel/unitares/releases/download/$TAG/unitares-$VERSION.tar.gz" >> "$GITHUB_ENV"
 
+      - name: Mint an upstream read-only App token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        id: upstream
+        with:
+          client-id: ${{ vars.UNITARES_AGENT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.UNITARES_AGENT_APP_PRIVATE_KEY }}
+          owner: cirwel
+          repositories: unitares
+          permission-contents: read
+          permission-pull-requests: read
+
       - name: Render and verify the tap transition
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.upstream.outputs.token }}
           VERSION: ${{ inputs.version }}
           TAG: ${{ inputs.tag }}
           COMMIT: ${{ inputs.commit }}
