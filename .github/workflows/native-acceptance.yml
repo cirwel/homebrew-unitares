@@ -42,12 +42,12 @@ jobs:
           brew update
           brew tap --custom-remote cirwel/unitares "file://$GITHUB_WORKSPACE"
           brew trust cirwel/unitares
-          expect_bottles=false
-          if grep -q '^  bottle do$' Formula/unitares.rb; then
-            expect_bottles=true
-            bottle_tag=""
-            for formula in apache-age unitares-pgvector unitares-lease-plane unitares; do
-              file="Formula/$formula.rb"
+          bottle_tag=""
+          bottled_formulae=()
+          for formula in apache-age unitares-pgvector unitares-lease-plane unitares; do
+            file="Formula/$formula.rb"
+            if grep -q '^  bottle do$' "$file"; then
+              bottled_formulae+=("$formula")
               tag="$(sed -n 's#^    root_url "https://github.com/cirwel/homebrew-unitares/releases/download/\([A-Za-z0-9._-]*\)"$#\1#p' "$file")"
               test -n "$tag"
               if [ -n "$bottle_tag" ]; then
@@ -56,7 +56,7 @@ jobs:
                 bottle_tag="$tag"
                 git fetch --force --no-tags origin "refs/tags/$bottle_tag"
               fi
-              ruby -0pe '$_.sub!(/\n  bottle do\n(?:    .*\n)+?  end\n/, "\n"); $_.gsub!(/\n{3,}/, "\n\n")' \
+              ruby -0pe 'abort "bottle block layout not recognized" unless $_.sub!(/\n\n  bottle do\n(?:    .*\n)+?  end\n/, "\n")' \
                 "$file" > "$RUNNER_TEMP/$formula.without-bottle.rb"
               git show "FETCH_HEAD:$file" > "$RUNNER_TEMP/$formula.bottle-source.rb"
               cmp "$RUNNER_TEMP/$formula.without-bottle.rb" \
@@ -64,7 +64,9 @@ jobs:
                 echo "$file differs from bottle source $bottle_tag; remove its stale bottle block and bump revision" >&2
                 exit 1
               }
-            done
+            fi
+          done
+          if printf '%s\n' "${bottled_formulae[@]}" | grep -qx unitares; then
             brew install cirwel/unitares/unitares
           else
             brew install --build-from-source cirwel/unitares/unitares
@@ -76,10 +78,11 @@ jobs:
             cirwel/unitares/apache-age \
             cirwel/unitares/unitares-pgvector \
             > "$RUNNER_TEMP/installed-managed-formulae.json"
-          if [ "$expect_bottles" = true ]; then
-            jq -e '.formulae | length == 4 and all(.installed[-1].poured_from_bottle == true)' \
+          for formula in "${bottled_formulae[@]}"; do
+            jq -e --arg formula "$formula" \
+              '.formulae[] | select(.name == $formula) | .installed[-1].poured_from_bottle == true' \
               "$RUNNER_TEMP/installed-managed-formulae.json"
-          fi
+          done
 
       - name: Verify installed source provenance and dependencies
         run: |
