@@ -126,12 +126,15 @@ jobs:
           test -n "$next_revision"
           grep -q "^  revision ${next_revision}$" "$target_repo/Formula/unitares.rb"
           echo "HOMEBREW_UNITARES_EXPECTED_SERVER_REVISION=$next_revision" >> "$GITHUB_ENV"
+          echo "HOMEBREW_UNITARES_TEST_TAP_TARGET=$target_repo" >> "$GITHUB_ENV"
+          echo "HOMEBREW_UNITARES_TEST_TAP_REMOTE=$target_remote" >> "$GITHUB_ENV"
           git -C "$target_repo" config user.name homebrew-native-acceptance
           git -C "$target_repo" config user.email homebrew-native-acceptance@invalid
           git -C "$target_repo" add Formula/unitares.rb
           git -C "$target_repo" commit -m 'test: publish ephemeral updater target'
           git clone --bare "$target_repo" "$target_remote"
           git -C "$target_remote" symbolic-ref HEAD refs/heads/main
+          git -C "$target_repo" remote set-url origin "$target_remote"
           git -C "$tap_repo" checkout -B main "$candidate_sha"
           git -C "$tap_repo" remote set-url origin "file://$target_remote"
           git -C "$tap_repo" fetch origin main
@@ -147,6 +150,32 @@ jobs:
           HOMEBREW_UNITARES_TEST_UPDATE_DB_URL: postgresql://unitares_update:acceptance_only@127.0.0.1:5432/unitares_acceptance_brew_update
         run: scripts/check-update.sh
 
+      - name: Require installed resume, abort and link recovery
+        env:
+          HOMEBREW_UNITARES_ACCEPTANCE_DIR: ${{ runner.temp }}/homebrew-acceptance
+          HOMEBREW_UNITARES_TEST_UPDATE_DB_URL: postgresql://unitares_update:acceptance_only@127.0.0.1:5432/unitares_acceptance_brew_update
+        run: scripts/check-update-recovery.sh basic
+
+      # Publish N+2 after N+1 is installed. The saved journal still names N+1,
+      # so a non-interactive resume must refuse the newly discovered target.
+      - name: Publish a second CI-only managed-package revision
+        run: |
+          set -euo pipefail
+          test -n "$HOMEBREW_UNITARES_TEST_TAP_TARGET"
+          test -n "$HOMEBREW_UNITARES_TEST_TAP_REMOTE"
+          ruby -0pi -e 'abort "revision not found" unless $_.sub!(/^  revision (\d+)$/) { "  revision #{$1.to_i + 1}" }' \
+            "$HOMEBREW_UNITARES_TEST_TAP_TARGET/Formula/unitares.rb"
+          git -C "$HOMEBREW_UNITARES_TEST_TAP_TARGET" add Formula/unitares.rb
+          git -C "$HOMEBREW_UNITARES_TEST_TAP_TARGET" \
+            commit -m 'test: publish second ephemeral updater target'
+          git -C "$HOMEBREW_UNITARES_TEST_TAP_TARGET" push origin main
+
+      - name: Require explicit consent for a changed resume target
+        env:
+          HOMEBREW_UNITARES_ACCEPTANCE_DIR: ${{ runner.temp }}/homebrew-acceptance
+          HOMEBREW_UNITARES_TEST_UPDATE_DB_URL: postgresql://unitares_update:acceptance_only@127.0.0.1:5432/unitares_acceptance_brew_update
+        run: scripts/check-update-recovery.sh target-consent
+
       - name: Preserve installed-artifact evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -154,9 +183,9 @@ jobs:
           name: homebrew-native-acceptance
           path: |
             ${{ runner.temp }}/installed-formula.json
-            ${{ runner.temp }}/homebrew-acceptance/*/*.log
-            ${{ runner.temp }}/homebrew-acceptance/*/*.json
-            ${{ runner.temp }}/homebrew-acceptance/update/backup-list.txt
+            ${{ runner.temp }}/homebrew-acceptance/**/*.log
+            ${{ runner.temp }}/homebrew-acceptance/**/*.json
+            ${{ runner.temp }}/homebrew-acceptance/**/backup-list.txt
             ${{ runner.temp }}/postgres.log
             ${{ runner.temp }}/redis.log
 
