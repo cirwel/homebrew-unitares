@@ -256,8 +256,9 @@ commit, metadata and every checksum, publishes non-overwriting prerelease
 assets, and opens a draft formula PR. Publication never authorizes merge; the
 installed acceptance job must pass again against the exact bottle formula.
 Any later updater backport strips the `unitares` bottle block and increments
-the formula revision; acceptance also requires bottles whenever a bottle block
-is present, so an obsolete bottle cannot silently mask formula changes.
+the formula revision. When bottle blocks are present, acceptance first requires
+every formula without that block to match the exact bottle-tag commit, so an
+obsolete bottle cannot silently mask formula changes.
 These jobs fail closed until the operator configures their named environments,
 adds the matching environment-scoped arming secret
 (`UNITARES_HOMEBREW_RELEASE_SYNC_ARMED` or

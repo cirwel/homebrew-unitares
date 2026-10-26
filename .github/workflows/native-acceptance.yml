@@ -45,6 +45,26 @@ jobs:
           expect_bottles=false
           if grep -q '^  bottle do$' Formula/unitares.rb; then
             expect_bottles=true
+            bottle_tag=""
+            for formula in apache-age unitares-pgvector unitares-lease-plane unitares; do
+              file="Formula/$formula.rb"
+              tag="$(sed -n 's#^    root_url "https://github.com/cirwel/homebrew-unitares/releases/download/\([A-Za-z0-9._-]*\)"$#\1#p' "$file")"
+              test -n "$tag"
+              if [ -n "$bottle_tag" ]; then
+                test "$tag" = "$bottle_tag"
+              else
+                bottle_tag="$tag"
+                git fetch --force --no-tags origin "refs/tags/$bottle_tag"
+              fi
+              ruby -0pe '$_.sub!(/\n  bottle do\n(?:    .*\n)+?  end\n/, "\n"); $_.gsub!(/\n{3,}/, "\n\n")' \
+                "$file" > "$RUNNER_TEMP/$formula.without-bottle.rb"
+              git show "FETCH_HEAD:$file" > "$RUNNER_TEMP/$formula.bottle-source.rb"
+              cmp "$RUNNER_TEMP/$formula.without-bottle.rb" \
+                "$RUNNER_TEMP/$formula.bottle-source.rb" || {
+                echo "$file differs from bottle source $bottle_tag; remove its stale bottle block and bump revision" >&2
+                exit 1
+              }
+            done
             brew install cirwel/unitares/unitares
           else
             brew install --build-from-source cirwel/unitares/unitares

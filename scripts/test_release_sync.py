@@ -56,6 +56,9 @@ class ReleaseSyncTest(unittest.TestCase):
             '  url "https://github.com/cirwel/unitares/archive/refs/tags/v3.5.0.tar.gz"\n'
             f'  sha256 "{"0" * 64}"\n'
             '  license "Apache-2.0"\n'
+            '  revision 2\n\n'
+            '  bottle do\n    root_url "https://example.invalid/old"\n'
+            '    sha256 cellar: :any, arm64_sequoia: "abc"\n  end\n\n'
             '  depends_on "elixir" => :build\n'
             'end\n'
         )
@@ -83,6 +86,8 @@ class ReleaseSyncTest(unittest.TestCase):
         self.assertNotIn("__END__", formula)
         self.assertIn("releases/download/v3.6.0/unitares-3.6.0.tar.gz", lease)
         self.assertIn(f'  sha256 "{"2" * 64}"', lease)
+        self.assertNotIn("revision", lease)
+        self.assertNotIn("bottle do", lease)
         self.assertIn('"package": "3.6.0"', sources)
         self.assertIn('"source": "1111111111111111111111111111111111111111"', sources)
 
@@ -204,6 +209,7 @@ class ReleaseSyncTest(unittest.TestCase):
             rendered, rendered_sources = sync_updater_backport.render(source, commit, 3086)
             self.assertNotIn("bottle do", rendered)
             self.assertIn("  revision 7", rendered)
+            self.assertNotIn("\n\n\n", rendered)
             self.assertIn(commit, rendered_sources)
             source.write_text("print('uncommitted')\n")
             with self.assertRaisesRegex(SystemExit, "does not match"):

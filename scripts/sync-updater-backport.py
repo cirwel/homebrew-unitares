@@ -42,6 +42,7 @@ def render(source: Path, commit: str, release_floor_pr: int) -> tuple[str, str]:
     bottle = re.search(r"\n  bottle do\n(?:    .*\n)+?  end\n", formula)
     if bottle:
         formula = formula[: bottle.start()] + "\n" + formula[bottle.end() :]
+        formula = re.sub(r"\n{3,}", "\n\n", formula)
         revision = re.search(r"^  revision ([0-9]+)$", formula, re.M)
         if revision:
             next_revision = int(revision.group(1)) + 1
