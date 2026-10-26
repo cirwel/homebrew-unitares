@@ -61,10 +61,17 @@ jobs:
           BOTTLE_TAG: ${{ inputs.bottle_tag }}
         run: |
           set -euo pipefail
+          [[ "$TAP_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BOTTLE_TAG" =~ ^bottles-[A-Za-z0-9._-]+$ ]] || {
+            echo "bottle_tag must match bottles-[A-Za-z0-9._-]+" >&2
+            exit 1
+          }
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > "$RUNNER_TEMP/run.json"
           test "$(jq -r .name "$RUNNER_TEMP/run.json")" = "Build Apple Silicon bottles"
+          test "$(jq -r .path "$RUNNER_TEMP/run.json")" = ".github/workflows/bottle-build.yml"
           test "$(jq -r .event "$RUNNER_TEMP/run.json")" = workflow_dispatch
           test "$(jq -r .conclusion "$RUNNER_TEMP/run.json")" = success
+          test "$(jq -r .head_branch "$RUNNER_TEMP/run.json")" = main
           test "$(jq -r .head_sha "$RUNNER_TEMP/run.json")" = "$TAP_COMMIT"
           mkdir "$RUNNER_TEMP/bottles"
           gh run download "$BUILD_RUN_ID" --repo "$GITHUB_REPOSITORY" \
@@ -74,6 +81,7 @@ jobs:
           test "$(jq -r .tap_ref build-metadata.json)" = "$TAP_COMMIT"
           test "$(jq -r .bottle_tag build-metadata.json)" = "$BOTTLE_TAG"
           test "$(jq -r .build_run_id build-metadata.json)" = "$BUILD_RUN_ID"
+          test "$(jq 'length' asset-map.json)" -eq 4
           grep -Fq "https://github.com/cirwel/homebrew-unitares/releases/download/$BOTTLE_TAG" \
             formula-bottles.patch
           test "$(find . -maxdepth 1 -name '*.bottle.tar.gz' | wc -l)" -eq 4
@@ -86,13 +94,39 @@ jobs:
           BOTTLE_TAG: ${{ inputs.bottle_tag }}
         run: |
           set -euo pipefail
+          branch=auto/homebrew-bottles
+          remote_ref="refs/remotes/origin/$branch"
+          lease="--force-with-lease=refs/heads/$branch:"
+          if git show-ref --verify --quiet "$remote_ref"; then
+            expected_remote="$(git rev-parse "$remote_ref")"
+            branch_base="$(git merge-base "$TAP_COMMIT" "$remote_ref")"
+            if git log --format='%ae' "$branch_base..$remote_ref" | \
+                grep -Fvx '342195540+unitares-agents[bot]@users.noreply.github.com' >/dev/null; then
+              echo "automation branch contains a non-bot commit; refusing to overwrite it" >&2
+              exit 1
+            fi
+            git checkout -B "$branch" "$remote_ref"
+            git reset --hard "$TAP_COMMIT"
+            lease="--force-with-lease=refs/heads/$branch:$expected_remote"
+          else
+            git checkout -B "$branch" "$TAP_COMMIT"
+          fi
           if ! gh release view "$BOTTLE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$BOTTLE_TAG" --repo "$GITHUB_REPOSITORY" \
               --target "$TAP_COMMIT" --prerelease \
               --title "Apple Silicon bottles $BOTTLE_TAG" \
               --notes "Built from tap commit $TAP_COMMIT by workflow run $BUILD_RUN_ID."
           fi
-          for asset in "$RUNNER_TEMP"/bottles/*.bottle.tar.gz; do
+          mkdir "$RUNNER_TEMP/publish-bottles"
+          while IFS=$'\t' read -r local_name published_name; do
+            [[ "$local_name" =~ ^[A-Za-z0-9._+-]+$ ]]
+            [[ "$published_name" =~ ^[A-Za-z0-9._+-]+$ ]]
+            cp "$RUNNER_TEMP/bottles/$local_name" \
+              "$RUNNER_TEMP/publish-bottles/$published_name"
+          done < <(jq -r '.[] | [.local_filename, .filename] | @tsv' \
+            "$RUNNER_TEMP/bottles/asset-map.json")
+          test "$(find "$RUNNER_TEMP/publish-bottles" -maxdepth 1 -name '*.bottle.tar.gz' | wc -l)" -eq 4
+          for asset in "$RUNNER_TEMP"/publish-bottles/*.bottle.tar.gz; do
             name=$(basename "$asset")
             existing="$RUNNER_TEMP/existing-$name"
             if gh release download "$BOTTLE_TAG" --repo "$GITHUB_REPOSITORY" \
@@ -105,13 +139,17 @@ jobs:
               gh release upload "$BOTTLE_TAG" "$asset" --repo "$GITHUB_REPOSITORY"
             fi
           done
-          branch=auto/homebrew-bottles
-          git checkout -B "$branch"
-          git apply --index "$RUNNER_TEMP/bottles/formula-bottles.patch"
+          git apply --index --include='Formula/*.rb' \
+            "$RUNNER_TEMP/bottles/formula-bottles.patch"
+          actual_paths="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' Formula/apache-age.rb \
+            Formula/unitares-lease-plane.rb Formula/unitares-pgvector.rb \
+            Formula/unitares.rb | LC_ALL=C sort)"
+          test "$actual_paths" = "$expected_paths"
           git config user.name "unitares-agents[bot]"
           git config user.email "342195540+unitares-agents[bot]@users.noreply.github.com"
           git commit -m "chore(bottles): add Apple Silicon bottles"
-          git push --force-with-lease origin "$branch"
+          git push "$lease" --force-if-includes origin "HEAD:refs/heads/$branch"
           body="$RUNNER_TEMP/bottle-pr-body.md"
           printf '%s\n' \
             "This draft adds Apple Silicon bottles built from tap commit $TAP_COMMIT." \

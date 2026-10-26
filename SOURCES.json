@@ -1,6 +1,7 @@
 {
   "package": "3.5.0_6",
   "release": "v3.5.0",
+  "release_floor_commit": "164e8f1c1acb6658257ae62668f216bf66a6fc14",
   "files": {
     ".env.example": {
       "source": "45202e282a009b7ff8987de63265c64696e547b7",
@@ -27,8 +28,8 @@
       "sha256": "b7a1d8a5ae632d2a1b520808390a23496fa2c2907d5b23797abc582903258521"
     },
     "scripts/install/homebrew_update.py": {
-      "source": "cirwel/unitares#3086 @ c9b8ea95e562c8d4f0d8fa231898238ca0fbef0d",
-      "sha256": "38ebcb8303a9666951ac4c9b0ff153e9f9f4ade14991d249567ad0cc5c2e7d0d"
+      "source": "cirwel/unitares#3086 @ 164e8f1c1acb6658257ae62668f216bf66a6fc14",
+      "sha256": "d314ba27d4b5c7ba96bc7b85e931e780522430211de5b36f6a3bdfd468b33d21"
     },
     "scripts/install/homebrew_services.py": {
       "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus cirwel/unitares#3086 @ 0da229bb561120176422ef9bfacbe961cc0c7a9f",

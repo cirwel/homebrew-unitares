@@ -42,8 +42,22 @@ jobs:
           brew update
           brew tap --custom-remote cirwel/unitares "file://$GITHUB_WORKSPACE"
           brew trust cirwel/unitares
-          brew install --build-from-source cirwel/unitares/unitares
+          if [ "${GITHUB_HEAD_REF:-}" = auto/homebrew-bottles ]; then
+            brew install cirwel/unitares/unitares
+          else
+            brew install --build-from-source cirwel/unitares/unitares
+          fi
           brew info --json=v2 unitares > "$RUNNER_TEMP/installed-formula.json"
+          brew info --json=v2 --formula \
+            cirwel/unitares/unitares \
+            cirwel/unitares/unitares-lease-plane \
+            cirwel/unitares/apache-age \
+            cirwel/unitares/unitares-pgvector \
+            > "$RUNNER_TEMP/installed-managed-formulae.json"
+          if [ "${GITHUB_HEAD_REF:-}" = auto/homebrew-bottles ]; then
+            jq -e '.formulae | length == 4 and all(.installed[-1].poured_from_bottle == true)' \
+              "$RUNNER_TEMP/installed-managed-formulae.json"
+          fi
 
       - name: Verify installed source provenance and dependencies
         run: |
@@ -119,7 +133,7 @@ jobs:
           candidate_sha="$(git -C "$tap_repo" rev-parse HEAD)"
           git clone "$tap_repo" "$target_repo"
           git -C "$target_repo" checkout -B main
-          ruby -0pi -e 'abort "revision not found" unless $_.sub!(/^  revision (\d+)$/) { "  revision #{$1.to_i + 1}" }' \
+          ruby -0pi -e 'unless $_.sub!(/^  revision (\d+)$/) { "  revision #{$1.to_i + 1}" }; abort "license not found" unless $_.sub!(/^  license .+$/) { "#{$&}\n  revision 1" }; end' \
             "$target_repo/Formula/unitares.rb"
           next_revision="$(ruby -ne 'puts $1 if /^  revision (\d+)$/' \
             "$target_repo/Formula/unitares.rb")"
@@ -163,7 +177,7 @@ jobs:
           set -euo pipefail
           test -n "$HOMEBREW_UNITARES_TEST_TAP_TARGET"
           test -n "$HOMEBREW_UNITARES_TEST_TAP_REMOTE"
-          ruby -0pi -e 'abort "revision not found" unless $_.sub!(/^  revision (\d+)$/) { "  revision #{$1.to_i + 1}" }' \
+          ruby -0pi -e 'unless $_.sub!(/^  revision (\d+)$/) { "  revision #{$1.to_i + 1}" }; abort "license not found" unless $_.sub!(/^  license .+$/) { "#{$&}\n  revision 1" }; end' \
             "$HOMEBREW_UNITARES_TEST_TAP_TARGET/Formula/unitares.rb"
           git -C "$HOMEBREW_UNITARES_TEST_TAP_TARGET" add Formula/unitares.rb
           git -C "$HOMEBREW_UNITARES_TEST_TAP_TARGET" \
@@ -183,6 +197,7 @@ jobs:
           name: homebrew-native-acceptance
           path: |
             ${{ runner.temp }}/installed-formula.json
+            ${{ runner.temp }}/installed-managed-formulae.json
             ${{ runner.temp }}/homebrew-acceptance/**/*.log
             ${{ runner.temp }}/homebrew-acceptance/**/*.json
             ${{ runner.temp }}/homebrew-acceptance/**/backup-list.txt

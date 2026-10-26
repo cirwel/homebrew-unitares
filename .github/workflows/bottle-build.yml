@@ -24,6 +24,7 @@ jobs:
   build:
     if: >-
       github.repository == 'cirwel/homebrew-unitares' &&
+      github.ref == 'refs/heads/main' &&
       vars.UNITARES_HOMEBREW_BOTTLES_ENABLED == 'true'
     environment: homebrew-bottle-build
     runs-on: macos-26
@@ -43,11 +44,13 @@ jobs:
         run: |
           set -euo pipefail
           test "$(uname -m)" = arm64
+          [[ "$TAP_REF" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$TAP_REF"
-          case "$BOTTLE_TAG" in
-            bottles-[A-Za-z0-9._-]*) ;;
-            *) echo "bottle_tag must begin with bottles-" >&2; exit 1 ;;
-          esac
+          test "$GITHUB_SHA" = "$TAP_REF"
+          [[ "$BOTTLE_TAG" =~ ^bottles-[A-Za-z0-9._-]+$ ]] || {
+            echo "bottle_tag must match bottles-[A-Za-z0-9._-]+" >&2
+            exit 1
+          }
           brew update
           brew tap --custom-remote cirwel/unitares "file://$GITHUB_WORKSPACE"
           brew trust cirwel/unitares
@@ -63,6 +66,10 @@ jobs:
           done
           brew bottle --merge --write --no-commit ./*.bottle.json
           mkdir "$RUNNER_TEMP/bottles"
+          jq -s '[.[] | to_entries[] | .value.bottle.tags | to_entries[] | .value | {local_filename, filename}] | sort_by(.filename)' \
+            ./*.bottle.json > "$RUNNER_TEMP/bottles/asset-map.json"
+          jq -e 'length == 4 and ([.[].filename] | unique | length == 4) and ([.[].local_filename] | unique | length == 4)' \
+            "$RUNNER_TEMP/bottles/asset-map.json"
           mv ./*.bottle.tar.gz ./*.bottle.json "$RUNNER_TEMP/bottles/"
           git -C "$tap_repo" diff --binary -- Formula \
             > "$RUNNER_TEMP/bottles/formula-bottles.patch"
@@ -72,7 +79,7 @@ jobs:
             '{schema_version:1,tap_ref:$tap_ref,bottle_tag:$bottle_tag,build_run_id:$run_id}' \
             > "$RUNNER_TEMP/bottles/build-metadata.json"
           cd "$RUNNER_TEMP/bottles"
-          shasum -a 256 ./*.bottle.tar.gz ./*.bottle.json formula-bottles.patch build-metadata.json \
+          shasum -a 256 ./*.bottle.tar.gz ./*.bottle.json asset-map.json formula-bottles.patch build-metadata.json \
             > SHA256SUMS
 
       - name: Upload the untrusted build artifact

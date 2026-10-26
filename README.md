@@ -187,11 +187,13 @@ unitares update --cleanup-backups
 unitares update --cleanup-backups --retain-backups 3 --older-than-days 30 --yes
 ```
 
-Cleanup verifies each indexed dump again, retains at least one backup, protects
-any dump referenced by an update journal, and records deletions in its own
-resumable journal. It never removes Homebrew kegs; `brew cleanup` remains a
-separate package-manager decision after the new installation and database have
-been independently verified.
+Cleanup verifies each existing indexed dump again, counts only those verified
+files toward the retention floor, protects any dump referenced by an update
+journal, and records deletions in its own resumable journal. Missing-file index
+records appear in the dry run and are reconciled only with `--yes`. It never
+removes Homebrew kegs; `brew cleanup` remains a separate package-manager
+decision after the new installation and database have been independently
+verified.
 
 Revision `3.5.0_5` predates this command. Its one-time transition to revision 6
 still requires the documented stop, verified backup, explicit four-package
@@ -231,13 +233,14 @@ prior VM/M1 evidence and its limits.
 ## Maintainer release and bottle workflow
 
 Stable upstream releases own a deterministic `unitares-VERSION.tar.gz` asset.
-The protected upstream
-[`Homebrew release sync`](https://github.com/cirwel/unitares/actions/workflows/homebrew-release-sync.yml)
-workflow builds or verifies that immutable asset, runs this tap's offline
-renderer, and opens or updates `auto/homebrew-release-sync` as a draft PR. The
-renderer refuses mutable GitHub source archives, downgrades, missing tracked
-sources, or removal of the v3.5.0 DATA backport before the release contains the
-native updater. It never marks the PR ready or merges it. This repository's
+The coordinated upstream
+[UNITARES change](https://github.com/cirwel/unitares/pull/3086) adds a guarded
+release workflow that builds or verifies that immutable asset, runs this tap's
+offline renderer, and opens or updates `auto/homebrew-release-sync` as a draft
+PR. The renderer refuses mutable GitHub source archives, downgrades, missing
+tracked sources, or removal of the v3.5.0 DATA backport before the release
+commit contains the manifest's reviewed backport floor. It never marks the PR
+ready or merges it. This repository's
 manual [draft release sync](.github/workflows/release-sync.yml) is a protected
 recovery path using the same renderer and evidence contract.
 

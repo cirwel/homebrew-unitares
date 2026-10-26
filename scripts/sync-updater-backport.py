@@ -36,6 +36,7 @@ def render(source: Path, commit: str) -> tuple[str, str]:
     rendered_formula = prefix + patch
 
     manifest = json.loads(SOURCES.read_text())
+    manifest["release_floor_commit"] = commit
     record = manifest["files"]["scripts/install/homebrew_update.py"]
     record["source"] = f"cirwel/unitares#3086 @ {commit}"
     record["sha256"] = hashlib.sha256(payload).hexdigest()

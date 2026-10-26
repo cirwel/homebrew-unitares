@@ -7,6 +7,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 
 SCRIPT = Path(__file__).with_name("release_sync.py")
@@ -23,6 +24,7 @@ class ReleaseSyncTest(unittest.TestCase):
         self.manifest = {
             "package": "3.5.0_6",
             "release": "v3.5.0",
+            "release_floor_commit": "1" * 40,
             "files": {},
         }
         for relative, marker in release_sync.REQUIRED_NATIVE_FILES.items():
@@ -40,6 +42,7 @@ class ReleaseSyncTest(unittest.TestCase):
             'end\n\n__END__\n--- a/file\n'
         )
         self.args = (
+            self.source,
             self.source,
             "3.6.0",
             "v3.6.0",
@@ -60,6 +63,34 @@ class ReleaseSyncTest(unittest.TestCase):
         self.assertIn('"package": "3.6.0"', sources)
         self.assertIn('"source": "1111111111111111111111111111111111111111"', sources)
 
+    def test_version_advance_removes_old_bottle_block(self) -> None:
+        formula = self.formula.replace(
+            "  # Reviewed setup/model backports; remove when the release includes them.\n",
+            '  bottle do\n    root_url "https://example.invalid/old"\n'
+            '    sha256 cellar: :any, arm64_sequoia: "abc"\n  end\n\n'
+            "  # Reviewed setup/model backports; remove when the release includes them.\n",
+        )
+        rendered, _ = release_sync.render(formula, self.manifest, *self.args)
+        self.assertNotIn("bottle do", rendered)
+
+    def test_equal_release_refuses_to_drop_revision(self) -> None:
+        args = list(self.args)
+        args[2] = "3.5.0"
+        args[3] = "v3.5.0"
+        args[5] = "https://github.com/cirwel/unitares/releases/download/v3.5.0/unitares-3.5.0.tar.gz"
+        with self.assertRaisesRegex(ValueError, "would lower its package version"):
+            release_sync.render(self.formula, self.manifest, *args)
+
+    def test_release_must_contain_reviewed_backport_floor(self) -> None:
+        manifest = {**self.manifest, "release_floor_commit": "0" * 40}
+        with mock.patch.object(
+            release_sync.subprocess,
+            "run",
+            return_value=mock.Mock(returncode=1),
+        ):
+            with self.assertRaisesRegex(ValueError, "reviewed backport floor"):
+                release_sync.render(self.formula, manifest, *self.args)
+
     def test_missing_updater_refuses_backport_removal(self) -> None:
         (self.source / "scripts/install/homebrew_update.py").unlink()
         with self.assertRaisesRegex(ValueError, "missing required native file"):
@@ -73,9 +104,9 @@ class ReleaseSyncTest(unittest.TestCase):
 
     def test_downgrade_is_refused(self) -> None:
         args = list(self.args)
-        args[1] = "3.4.0"
-        args[2] = "v3.4.0"
-        args[4] = "https://github.com/cirwel/unitares/releases/download/v3.4.0/unitares-3.4.0.tar.gz"
+        args[2] = "3.4.0"
+        args[3] = "v3.4.0"
+        args[5] = "https://github.com/cirwel/unitares/releases/download/v3.4.0/unitares-3.4.0.tar.gz"
         with self.assertRaisesRegex(ValueError, "would downgrade"):
             release_sync.render(self.formula, self.manifest, *args)
 

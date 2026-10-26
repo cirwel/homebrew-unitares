@@ -40,6 +40,9 @@ database: no-op resume restores every managed pin, safe abort restores the prior
 writer state, an unlinked CLI is recovered through the stable `opt` path, and a
 newly discovered N+2 target is refused non-interactively until the operator
 reconfirms it. Private database dumps remain outside public artifacts.
+For an `auto/homebrew-bottles` PR, the same job installs without
+`--build-from-source` and requires all four managed formulae to report
+`poured_from_bottle` before running the installed lifecycle acceptance.
 
 Local and CI results establish the tested mechanisms, not compatibility beyond
 their named host and scenarios. A GitHub run is evidence only when the exact

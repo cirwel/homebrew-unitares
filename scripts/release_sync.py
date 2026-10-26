@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,11 +40,13 @@ def version_tuple(version: str) -> tuple[int, int, int]:
 
 def validate_release(
     source_root: Path,
+    release_repo: Path,
     version: str,
     tag: str,
     commit: str,
     archive_url: str,
     archive_sha256: str,
+    release_floor_commit: str,
 ) -> None:
     version_tuple(version)
     if tag != f"v{version}":
@@ -58,6 +61,26 @@ def validate_release(
         raise ValueError(f"archive URL must be {expected_url}")
     if not re.fullmatch(r"[0-9a-f]{64}", archive_sha256):
         raise ValueError("archive SHA-256 must be lowercase hexadecimal")
+    if not re.fullmatch(r"[0-9a-f]{40}", release_floor_commit):
+        raise ValueError("SOURCES.json release_floor_commit must be a full commit")
+    if release_floor_commit != commit:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(release_repo),
+                "merge-base",
+                "--is-ancestor",
+                release_floor_commit,
+                commit,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if result.returncode:
+            raise ValueError(
+                "release commit does not contain the complete reviewed backport floor"
+            )
     for relative, marker in REQUIRED_NATIVE_FILES.items():
         path = source_root / relative
         if not path.is_file():
@@ -70,13 +93,26 @@ def render(
     formula: str,
     manifest: dict[str, object],
     source_root: Path,
+    release_repo: Path,
     version: str,
     tag: str,
     commit: str,
     archive_url: str,
     archive_sha256: str,
 ) -> tuple[str, str]:
-    validate_release(source_root, version, tag, commit, archive_url, archive_sha256)
+    release_floor_commit = manifest.get("release_floor_commit")
+    if not isinstance(release_floor_commit, str):
+        raise ValueError("SOURCES.json release_floor_commit is missing")
+    validate_release(
+        source_root,
+        release_repo,
+        version,
+        tag,
+        commit,
+        archive_url,
+        archive_sha256,
+        release_floor_commit,
+    )
     url_match = re.search(r'^  url "(?P<url>[^"]+)"$', formula, re.M)
     if not url_match:
         raise ValueError("formula release URL was not recognized")
@@ -87,8 +123,13 @@ def render(
     if not current_match:
         raise ValueError("formula release version was not recognized")
     current = current_match.group(1)
+    advancing = version_tuple(version) > version_tuple(current)
     if version_tuple(version) < version_tuple(current):
         raise ValueError(f"release {version} would downgrade formula {current}")
+    if not advancing and re.search(r"^  revision [0-9]+$", formula, re.M):
+        raise ValueError(
+            f"release {version} equals a revised formula and would lower its package version"
+        )
 
     rendered = re.sub(r'^  url ".*"$', f'  url "{archive_url}"', formula, count=1, flags=re.M)
     rendered = re.sub(
@@ -98,7 +139,16 @@ def render(
         count=1,
         flags=re.M,
     )
-    rendered = re.sub(r"^  revision [0-9]+\n", "", rendered, count=1, flags=re.M)
+    if advancing:
+        rendered = re.sub(
+            r"^  revision [0-9]+\n", "", rendered, count=1, flags=re.M
+        )
+        rendered = re.sub(
+            r"\n  bottle do\n(?:    .*\n)+?  end\n",
+            "\n",
+            rendered,
+            count=1,
+        )
     rendered = re.sub(
         r"\n  # Reviewed setup/model backports; remove when the release includes them\.\n"
         r"  patch :DATA\n",
@@ -123,6 +173,7 @@ def render(
     rendered_manifest = {
         "package": version,
         "release": tag,
+        "release_floor_commit": release_floor_commit,
         "files": rendered_files,
     }
     return rendered, json.dumps(rendered_manifest, indent=2) + "\n"
@@ -131,6 +182,7 @@ def render(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, required=True)
+    parser.add_argument("--release-repo", type=Path, required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--commit", required=True)
@@ -143,6 +195,7 @@ def main() -> int:
             FORMULA.read_text(),
             json.loads(SOURCES.read_text()),
             args.source_root.resolve(),
+            args.release_repo.resolve(),
             args.version,
             args.tag,
             args.commit,
