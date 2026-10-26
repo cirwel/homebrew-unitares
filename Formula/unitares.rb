@@ -2425,7 +2425,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            self.check_update_barrier()
 --- /dev/null
 +++ b/scripts/install/homebrew_update.py
-@@ -0,0 +1,753 @@
+@@ -0,0 +1,754 @@
 +#!/usr/bin/env python3
 +"""Coordinate a safe update of the packaged macOS Homebrew installation.
 +
@@ -2996,6 +2996,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                "This update cannot be abandoned because the schema version changed; repair forward with "
 +                "`unitares update --resume`."
 +            )
++        self.managed_pins("pin")
 +        state["stage"] = "aborted"
 +        state["aborted_at"] = _utc_now()
 +        state["abort_reason"] = "operator abandoned before package or schema change"
