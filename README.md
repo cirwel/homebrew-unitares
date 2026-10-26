@@ -158,11 +158,15 @@ installed-formula inventory before and after, reapplies the managed pins, runs
 migrations from the new keg and restores prior service state. If interrupted,
 an unfinished journal blocks a separate `unitares start`; the new keg resumes
 the journal, refreshing the tap target and backup before a retried package
-transaction:
+transaction. If the target changed, resume asks again before adopting it:
 
 ```sh
 unitares update --resume
 ```
+
+If an interrupted Homebrew link step removes `unitares` from `PATH`, use
+`$(brew --prefix)/opt/unitares/bin/unitares update --resume`. The updater repairs
+missing managed links without overwriting conflicting prefix files.
 
 An identity-count mismatch keeps writers stopped. Inspect the database and
 backup first; if the changed count is expected, continue explicitly with

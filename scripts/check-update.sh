@@ -5,6 +5,7 @@
 set -eu
 
 : "${HOMEBREW_UNITARES_TEST_UPDATE_DB_URL:?Set a dedicated updater database URL}"
+: "${HOMEBREW_UNITARES_EXPECTED_SERVER_REVISION:?Set the CI-only target revision}"
 
 prefix=$(brew --prefix unitares)
 brew_prefix=$(brew --prefix)
@@ -89,7 +90,8 @@ expected = {"unitares", "unitares-lease-plane", "apache-age", "unitares-pgvector
 assert set(by_name) == expected, by_name
 assert all(by_name[name]["pinned"] for name in expected), by_name
 server = by_name["unitares"]
-assert server["linked_keg"].endswith("_7"), server
+expected_revision = os.environ["HOMEBREW_UNITARES_EXPECTED_SERVER_REVISION"]
+assert server["linked_keg"].endswith(f"_{expected_revision}"), server
 
 writers = json.loads((evidence / "writers.json").read_text())
 assert {item["name"] for item in writers} == {"unitares", "unitares-lease-plane"}

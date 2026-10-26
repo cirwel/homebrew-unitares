@@ -27,11 +27,11 @@
       "sha256": "b7a1d8a5ae632d2a1b520808390a23496fa2c2907d5b23797abc582903258521"
     },
     "scripts/install/homebrew_update.py": {
-      "source": "9fbff878bc845b7cfde2e847f220f46eb279f596",
-      "sha256": "dcc59ef051699f29096213be7329e7e95908b73ecf8b034e3215dabbbac0f1bc"
+      "source": "cirwel/unitares#3086 @ eddd0f5c278b62e94c9d7f3197d582f5445a9ebf",
+      "sha256": "a9f830cdb1b9759e84e09b56f6dc14c17f686d08a050420166986d5ecf9af419"
     },
     "scripts/install/homebrew_services.py": {
-      "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus 0da229bb561120176422ef9bfacbe961cc0c7a9f",
+      "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus cirwel/unitares#3086 @ 0da229bb561120176422ef9bfacbe961cc0c7a9f",
       "sha256": "46aa1debd9b79bf5272046dfd40ffa355b4afe63c2d8dd70a1cddf33d620a2bb"
     },
     "scripts/install/launch.sh": {
@@ -43,7 +43,7 @@
       "sha256": "01b07152dbb12e31c0b0ccba35d146d534860cd138bb8e148e10c65fb702cd2e"
     },
     "scripts/unitares": {
-      "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus 76016cf60d1fa22eef2e4041e125f51968a06792",
+      "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus cirwel/unitares#3086 @ 76016cf60d1fa22eef2e4041e125f51968a06792",
       "sha256": "864721f578135a4eba30bcaceb71838a052f151267fa4c44b3c908105f87fc35"
     },
     "src/interface_contract.py": {

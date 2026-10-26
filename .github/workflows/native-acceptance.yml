@@ -119,9 +119,13 @@ jobs:
           candidate_sha="$(git -C "$tap_repo" rev-parse HEAD)"
           git clone "$tap_repo" "$target_repo"
           git -C "$target_repo" checkout -B main
-          ruby -0pi -e 'sub("  revision 6\n", "  revision 7\n")' \
+          ruby -0pi -e 'abort "revision not found" unless $_.sub!(/^  revision (\d+)$/) { "  revision #{$1.to_i + 1}" }' \
             "$target_repo/Formula/unitares.rb"
-          grep -q '^  revision 7$' "$target_repo/Formula/unitares.rb"
+          next_revision="$(ruby -ne 'puts $1 if /^  revision (\d+)$/' \
+            "$target_repo/Formula/unitares.rb")"
+          test -n "$next_revision"
+          grep -q "^  revision ${next_revision}$" "$target_repo/Formula/unitares.rb"
+          echo "HOMEBREW_UNITARES_EXPECTED_SERVER_REVISION=$next_revision" >> "$GITHUB_ENV"
           git -C "$target_repo" config user.name homebrew-native-acceptance
           git -C "$target_repo" config user.email homebrew-native-acceptance@invalid
           git -C "$target_repo" add Formula/unitares.rb
