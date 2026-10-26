@@ -2,7 +2,8 @@
 
 Native macOS packages for [UNITARES](https://github.com/cirwel/unitares): the
 server, coordination lease plane, PostgreSQL 17 with Apache AGE and pgvector,
-and Redis. Docker is not required.
+and Redis. This is the recommended installation for an Apple Silicon desktop
+Mac; Docker remains the portable choice for servers, CI and non-macOS hosts.
 
 This is a **preview for Apple Silicon Macs**. Installation builds from source;
 no bottles are published. Database creation, bootstrap and upgrades remain
@@ -19,12 +20,12 @@ brew update
 brew tap cirwel/unitares
 brew trust cirwel/unitares
 brew install cirwel/unitares/unitares
-brew pin unitares unitares-lease-plane
+brew pin unitares unitares-lease-plane apache-age unitares-pgvector
 ```
 
-The server package is **3.5.0 revision 5** (`3.5.0_5`); its upstream runtime
-version still reports `3.5.0`. Revision 5 publishes the validated native setup
-and optional-model backports with public tap names and documentation.
+The server package is **3.5.0 revision 6** (`3.5.0_6`); its upstream runtime
+version still reports `3.5.0`. Revision 6 adds the coordinated native updater
+to the validated setup and optional-model backports.
 [SOURCES.json](SOURCES.json) records the backports and installed file hashes.
 
 Choose one primary installation per Mac. A Docker/Colima deployment already
@@ -141,16 +142,44 @@ Python environment, since upgrades replace it.
 
 ## Upgrades and recovery
 
-Keep the server and lease-plane packages pinned until you have selected and
-reviewed a target revision. `unitares update` is Compose-only and refuses this
-native installation. A bare `brew upgrade` is not a database upgrade procedure.
+Keep all four managed packages pinned between explicit UNITARES updates. A
+bare `brew upgrade` is not a database upgrade procedure. Check the locally
+cached plan without changing the host, or perform the coordinated update:
 
-Stop both writers with `unitares stop` and verify they exited. Take and verify
-a PostgreSQL backup and preserve the private configuration. Retain the old kegs
-while installing the chosen target. Apply any required migrations explicitly
-with the installed package's Python and `scripts/dev/apply_migrations.py`,
-including `--dialectic-writers-quiesced`, then restart and verify deep health
-and existing identities before moving clients or deleting backups.
+```sh
+unitares update --check
+unitares update
+```
+
+The apply command refreshes the tap, stops both writers, verifies quiescence,
+makes and validates a private PostgreSQL backup, temporarily unpins and upgrades
+the exact managed set, reapplies the pins, runs migrations from the new keg and
+restores the prior running/stopped state after verification. If interrupted,
+the new keg resumes the durable journal:
+
+```sh
+unitares update --resume
+```
+
+Revision `3.5.0_5` predates this command. Its one-time transition to revision 6
+still requires the documented stop, verified backup, explicit four-package
+unpin/upgrade/repin procedure:
+
+```sh
+unitares stop
+# Take and verify the PostgreSQL backup described in the linked procedure.
+brew unpin unitares unitares-lease-plane apache-age unitares-pgvector
+brew upgrade --formula cirwel/unitares/unitares \
+  cirwel/unitares/unitares-lease-plane cirwel/unitares/apache-age \
+  cirwel/unitares/unitares-pgvector
+brew pin unitares unitares-lease-plane apache-age unitares-pgvector
+unitares update --check
+# If both writers were running before the transition: unitares start
+```
+
+Revision 6 changes the package lifecycle but adds no schema migration. Later
+upgrades use the coordinated path above. Reinstalling an older keg does not
+reverse a database migration.
 
 See the upstream [backup, migration and rollback procedure](https://github.com/cirwel/unitares/blob/v3.5.0/docs/manual/02-install.md#updating-a-bare-metal-or-launchagent-install).
 Use scripts from `$(brew --prefix unitares)/libexec/app` and its sibling
@@ -161,6 +190,7 @@ Homebrew keg. Reinstalling an older keg does not reverse a database migration.
 
 [Installed acceptance](.github/workflows/native-acceptance.yml) builds the
 candidate tap on an isolated Apple Silicon macOS runner, checks installed source
-hashes and Python dependencies, and requires fresh bootstrap plus interrupted
-recovery against the installed package. See [VALIDATION.md](VALIDATION.md) for
+hashes and Python dependencies, requires fresh bootstrap plus interrupted
+recovery, and exercises a real coordinated managed-package update with backup,
+pin, journal and data-preservation checks. See [VALIDATION.md](VALIDATION.md) for
 prior VM/M1 evidence and its limits.

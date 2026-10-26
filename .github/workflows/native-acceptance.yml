@@ -16,7 +16,7 @@ permissions:
 jobs:
   installed-package:
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Check out the candidate tap
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -94,6 +94,54 @@ jobs:
           HOMEBREW_UNITARES_TEST_RECOVERY_REDIS_URL: redis://127.0.0.1:56379/1
         run: scripts/check-installed.sh
 
+      - name: Provision the coordinated-update database
+        run: |
+          set -euo pipefail
+          brew services start postgresql@17
+          touch "$RUNNER_TEMP/update-postgres-owned"
+          brew services start redis
+          touch "$RUNNER_TEMP/update-redis-owned"
+          pg_bin="$(brew --prefix postgresql@17)/bin"
+          "$pg_bin/pg_isready" -h 127.0.0.1 -p 5432 -t 30
+          "$pg_bin/createuser" --superuser unitares_update
+          "$pg_bin/psql" --dbname=postgres --set=ON_ERROR_STOP=1 \
+            --command="ALTER ROLE unitares_update PASSWORD 'acceptance_only';"
+          "$pg_bin/createdb" --owner=unitares_update unitares_acceptance_brew_update
+
+      # The installed candidate is N. Publish a CI-only N+1 revision of one
+      # managed component in Homebrew's tap clone so N's updater must apply a
+      # real formula transaction while preserving the rest of the managed set.
+      - name: Publish a CI-only next managed-package revision
+        run: |
+          set -euo pipefail
+          tap_repo="$(brew --repository cirwel/unitares)"
+          target_repo="$RUNNER_TEMP/update-tap-target"
+          target_remote="$RUNNER_TEMP/update-tap-remote.git"
+          candidate_sha="$(git -C "$tap_repo" rev-parse HEAD)"
+          git clone "$tap_repo" "$target_repo"
+          git -C "$target_repo" checkout -B main
+          ruby -0pi -e 'sub("  license \"Apache-2.0\"\n", "  license \"Apache-2.0\"\n  revision 1\n")' \
+            "$target_repo/Formula/unitares-lease-plane.rb"
+          grep -q '^  revision 1$' "$target_repo/Formula/unitares-lease-plane.rb"
+          git -C "$target_repo" config user.name homebrew-native-acceptance
+          git -C "$target_repo" config user.email homebrew-native-acceptance@invalid
+          git -C "$target_repo" add Formula/unitares-lease-plane.rb
+          git -C "$target_repo" commit -m 'test: publish ephemeral updater target'
+          git clone --bare "$target_repo" "$target_remote"
+          git -C "$target_remote" symbolic-ref HEAD refs/heads/main
+          git -C "$tap_repo" checkout -B main "$candidate_sha"
+          git -C "$tap_repo" remote set-url origin "file://$target_remote"
+          git -C "$tap_repo" fetch origin main
+          git -C "$tap_repo" branch --set-upstream-to=origin/main main
+          test "$(git -C "$tap_repo" rev-parse HEAD)" != \
+            "$(git -C "$tap_repo" rev-parse origin/main)"
+
+      - name: Require an installed coordinated package update
+        env:
+          HOMEBREW_UNITARES_ACCEPTANCE_DIR: ${{ runner.temp }}/homebrew-acceptance
+          HOMEBREW_UNITARES_TEST_UPDATE_DB_URL: postgresql://unitares_update:acceptance_only@127.0.0.1:5432/unitares_acceptance_brew_update
+        run: scripts/check-update.sh
+
       - name: Preserve installed-artifact evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -103,6 +151,7 @@ jobs:
             ${{ runner.temp }}/installed-formula.json
             ${{ runner.temp }}/homebrew-acceptance/*/*.log
             ${{ runner.temp }}/homebrew-acceptance/*/*.json
+            ${{ runner.temp }}/homebrew-acceptance/update/backups/*.dump
             ${{ runner.temp }}/postgres.log
             ${{ runner.temp }}/redis.log
 
@@ -115,4 +164,10 @@ jobs:
           if [ -f "$RUNNER_TEMP/postgres-owned" ]; then
             "$(brew --prefix postgresql@17)/bin/pg_ctl" \
               -D "$RUNNER_TEMP/acceptance-postgres" stop -m smart -w -t 20
+          fi
+          if [ -f "$RUNNER_TEMP/update-redis-owned" ]; then
+            brew services stop redis
+          fi
+          if [ -f "$RUNNER_TEMP/update-postgres-owned" ]; then
+            brew services stop postgresql@17
           fi
