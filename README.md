@@ -153,9 +153,9 @@ unitares update
 
 The apply command refreshes the tap, stops both writers, verifies quiescence,
 makes and validates a private PostgreSQL backup, temporarily unpins and upgrades
-the exact managed set while holding its installed dependency closure pinned,
-restores the prior pin state, runs migrations from the new keg and restores the
-prior running/stopped state after verification. If interrupted,
+the managed set and any dependencies Homebrew requires, records the complete
+installed-formula inventory before and after, reapplies the managed pins, runs
+migrations from the new keg and restores prior service state. If interrupted,
 an unfinished journal blocks a separate `unitares start`; the new keg resumes
 the journal, refreshing the backup before a retried package transaction:
 
