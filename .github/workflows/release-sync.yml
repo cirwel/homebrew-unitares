@@ -83,6 +83,7 @@ jobs:
 
       - name: Render and verify the tap transition
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
           TAG: ${{ inputs.tag }}
           COMMIT: ${{ inputs.commit }}
@@ -106,18 +107,25 @@ jobs:
             git checkout -B "$branch" origin/main
           fi
           echo "UNITARES_RELEASE_LEASE=$lease" >> "$GITHUB_ENV"
+          floor_pr="$(jq -r .release_floor_pr SOURCES.json)"
+          floor_commit="$(gh pr view "$floor_pr" --repo cirwel/unitares \
+            --json state,mergeCommit \
+            --jq 'select(.state == "MERGED") | .mergeCommit.oid')"
+          test -n "$floor_commit"
           python3 scripts/release_sync.py \
             --source-root "$UNITARES_RELEASE_ROOT" \
             --release-repo "$GITHUB_WORKSPACE/_upstream" \
             --version "$VERSION" --tag "$TAG" --commit "$COMMIT" \
             --archive-url "$UNITARES_ARCHIVE_URL" \
-            --archive-sha256 "$ARCHIVE_SHA256"
+            --archive-sha256 "$ARCHIVE_SHA256" \
+            --release-floor-commit "$floor_commit"
           python3 scripts/release_sync.py \
             --source-root "$UNITARES_RELEASE_ROOT" \
             --release-repo "$GITHUB_WORKSPACE/_upstream" \
             --version "$VERSION" --tag "$TAG" --commit "$COMMIT" \
             --archive-url "$UNITARES_ARCHIVE_URL" \
-            --archive-sha256 "$ARCHIVE_SHA256" --check
+            --archive-sha256 "$ARCHIVE_SHA256" \
+            --release-floor-commit "$floor_commit" --check
           python3 scripts/test_release_sync.py
           for path in $(jq -r '.files | keys[]' SOURCES.json); do
             cmp "$UNITARES_RELEASE_ROOT/$path" "_upstream/$path"

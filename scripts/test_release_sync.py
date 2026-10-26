@@ -24,7 +24,7 @@ class ReleaseSyncTest(unittest.TestCase):
         self.manifest = {
             "package": "3.5.0_6",
             "release": "v3.5.0",
-            "release_floor_commit": "1" * 40,
+            "release_floor_pr": 3086,
             "files": {},
         }
         for relative, marker in release_sync.REQUIRED_NATIVE_FILES.items():
@@ -49,6 +49,7 @@ class ReleaseSyncTest(unittest.TestCase):
             "1" * 40,
             "https://github.com/cirwel/unitares/releases/download/v3.6.0/unitares-3.6.0.tar.gz",
             "2" * 64,
+            "1" * 40,
         )
 
     def tearDown(self) -> None:
@@ -64,14 +65,22 @@ class ReleaseSyncTest(unittest.TestCase):
         self.assertIn('"source": "1111111111111111111111111111111111111111"', sources)
 
     def test_version_advance_removes_old_bottle_block(self) -> None:
-        formula = self.formula.replace(
-            "  # Reviewed setup/model backports; remove when the release includes them.\n",
+        formula = (
+            'class Unitares < Formula\n'
+            '  url "https://github.com/cirwel/unitares/archive/refs/tags/v3.5.0.tar.gz"\n'
+            f'  sha256 "{"0" * 64}"\n'
+            '  license "Apache-2.0"\n'
+            '  revision 6\n\n'
             '  bottle do\n    root_url "https://example.invalid/old"\n'
             '    sha256 cellar: :any, arm64_sequoia: "abc"\n  end\n\n'
-            "  # Reviewed setup/model backports; remove when the release includes them.\n",
+            '  depends_on :macos\n\n'
+            '  # Reviewed setup/model backports; remove when the release includes them.\n'
+            '  patch :DATA\n'
+            'end\n\n__END__\n--- a/file\n'
         )
         rendered, _ = release_sync.render(formula, self.manifest, *self.args)
         self.assertNotIn("bottle do", rendered)
+        self.assertNotIn('license "Apache-2.0"\n\n\n', rendered)
 
     def test_equal_release_refuses_to_drop_revision(self) -> None:
         args = list(self.args)
@@ -82,14 +91,15 @@ class ReleaseSyncTest(unittest.TestCase):
             release_sync.render(self.formula, self.manifest, *args)
 
     def test_release_must_contain_reviewed_backport_floor(self) -> None:
-        manifest = {**self.manifest, "release_floor_commit": "0" * 40}
+        args = list(self.args)
+        args[-1] = "0" * 40
         with mock.patch.object(
             release_sync.subprocess,
             "run",
             return_value=mock.Mock(returncode=1),
         ):
             with self.assertRaisesRegex(ValueError, "reviewed backport floor"):
-                release_sync.render(self.formula, manifest, *self.args)
+                release_sync.render(self.formula, self.manifest, *args)
 
     def test_missing_updater_refuses_backport_removal(self) -> None:
         (self.source / "scripts/install/homebrew_update.py").unlink()
@@ -98,7 +108,7 @@ class ReleaseSyncTest(unittest.TestCase):
 
     def test_mutable_source_archive_url_is_refused(self) -> None:
         args = list(self.args)
-        args[-2] = "https://github.com/cirwel/unitares/archive/refs/tags/v3.6.0.tar.gz"
+        args[5] = "https://github.com/cirwel/unitares/archive/refs/tags/v3.6.0.tar.gz"
         with self.assertRaisesRegex(ValueError, "archive URL must be"):
             release_sync.render(self.formula, self.manifest, *args)
 

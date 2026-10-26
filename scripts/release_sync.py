@@ -62,7 +62,7 @@ def validate_release(
     if not re.fullmatch(r"[0-9a-f]{64}", archive_sha256):
         raise ValueError("archive SHA-256 must be lowercase hexadecimal")
     if not re.fullmatch(r"[0-9a-f]{40}", release_floor_commit):
-        raise ValueError("SOURCES.json release_floor_commit must be a full commit")
+        raise ValueError("resolved release-floor commit must be a full commit")
     if release_floor_commit != commit:
         result = subprocess.run(
             [
@@ -99,10 +99,11 @@ def render(
     commit: str,
     archive_url: str,
     archive_sha256: str,
+    release_floor_commit: str,
 ) -> tuple[str, str]:
-    release_floor_commit = manifest.get("release_floor_commit")
-    if not isinstance(release_floor_commit, str):
-        raise ValueError("SOURCES.json release_floor_commit is missing")
+    release_floor_pr = manifest.get("release_floor_pr")
+    if not isinstance(release_floor_pr, int) or release_floor_pr < 1:
+        raise ValueError("SOURCES.json release_floor_pr is missing")
     validate_release(
         source_root,
         release_repo,
@@ -149,6 +150,15 @@ def render(
             rendered,
             count=1,
         )
+        if "\n  bottle do\n" in rendered:
+            raise ValueError("formula still contains a bottle block from the prior version")
+        rendered = re.sub(
+            r'(^  license .+\n)\n+(?=  depends_on)',
+            r'\1\n',
+            rendered,
+            count=1,
+            flags=re.M,
+        )
     rendered = re.sub(
         r"\n  # Reviewed setup/model backports; remove when the release includes them\.\n"
         r"  patch :DATA\n",
@@ -173,7 +183,7 @@ def render(
     rendered_manifest = {
         "package": version,
         "release": tag,
-        "release_floor_commit": release_floor_commit,
+        "release_floor_pr": release_floor_pr,
         "files": rendered_files,
     }
     return rendered, json.dumps(rendered_manifest, indent=2) + "\n"
@@ -188,6 +198,7 @@ def main() -> int:
     parser.add_argument("--commit", required=True)
     parser.add_argument("--archive-url", required=True)
     parser.add_argument("--archive-sha256", required=True)
+    parser.add_argument("--release-floor-commit", required=True)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     try:
@@ -201,6 +212,7 @@ def main() -> int:
             args.commit,
             args.archive_url,
             args.archive_sha256,
+            args.release_floor_commit,
         )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
