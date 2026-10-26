@@ -1,12 +1,12 @@
 # Native package validation
 
-The current preview package is server `3.5.0` revision 6. It uses the v3.5.0
-archive plus the 15 reviewed installed-file backports recorded with source
-provenance and SHA-256 digests in [SOURCES.json](SOURCES.json). Revision 6 adds
-the coordinated native updater; the formula remains restricted to Apple Silicon
+The current preview package tracks the upstream release and source commit in
+[SOURCES.json](SOURCES.json). The manifest also records SHA-256 digests for
+every tracked installed file. Both release-coupled formulae pin the same
+SHA-256-verified release asset; `unitares` remains restricted to Apple Silicon
 macOS and builds from source.
 
-Before publication, installed revision 4 passed on an isolated Apple Silicon
+Before publication, installed `3.5.0_4` passed on an isolated Apple Silicon
 macOS VM:
 
 - All 14 then-current backported source hashes, private-venv `pip check`, and
@@ -28,7 +28,7 @@ custom-format database dump were retained. This revision introduced no SQL
 migrations. The dump was checked with `pg_restore --list`, not round-trip
 restored during that particular rollout.
 
-Revision 6 public CI builds the candidate on an isolated Apple Silicon runner,
+The `3.5.0_6` public CI builds the candidate on an isolated Apple Silicon runner,
 verifies all 15 installed-source hashes and Python dependencies, runs formula
 tests, provisions dedicated PostgreSQL and Redis instances, and requires fresh
 bootstrap plus interrupted-migration recovery. It then publishes an ephemeral

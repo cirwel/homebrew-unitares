@@ -23,8 +23,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # 3.5.0 predates the harness. Keep the separately reviewed harness pinned;
-      # it operates on the installed keg, not this server source checkout.
+      # Keep the separately reviewed harness pinned; it operates on the
+      # installed keg, not a mutable server source checkout.
       - name: Check out the reviewed acceptance harness
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

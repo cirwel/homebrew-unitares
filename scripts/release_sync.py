@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render a draft tap transition from an immutable UNITARES release asset."""
+"""Render a draft tap transition from a SHA-256-pinned UNITARES release asset."""
 
 from __future__ import annotations
 
