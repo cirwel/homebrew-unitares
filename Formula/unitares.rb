@@ -2360,9 +2360,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                        "UNITARES_MODEL_BASE_URL is explicitly configured, "
 --- a/scripts/unitares
 +++ b/scripts/unitares
-@@ -994,0 +995,9 @@
-+}
-+
+@@ -996,0 +997,9 @@
 +_homebrew_update() {
 +    local arg
 +    local -a options=()
@@ -2370,13 +2368,18 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +        [ "$arg" = "--homebrew" ] || options+=("$arg")
 +    done
 +    python3 "$(_repo_root)/scripts/install/homebrew_update.py" "${options[@]+"${options[@]}"}"
++}
++
+@@ -1026 +1035 @@
+-        echo "       Native upgrades still require stopping both writers, backup and explicit migration. See docs/install/CHOOSING_INSTALLATION.md." >&2
++        echo "       Use 'unitares update' for the coordinated native upgrade lifecycle. See docs/install/CHOOSING_INSTALLATION.md." >&2
 @@ -1380,0 +1390,4 @@
 +    if _has_homebrew_option "$@" || _is_homebrew_package; then
 +        _homebrew_update "$@"
 +        return $?
 +    fi
 @@ -1597,0 +1611,4 @@
-+  update --homebrew [--check|--resume] [--yes]
++  update --homebrew [--check|--resume] [--yes] [--accept-identity-change]
 +                                    Refresh and upgrade the managed formulae,
 +                                    back up, migrate, restart and verify. An
 +                                    interrupted update resumes from its journal
@@ -2391,9 +2394,37 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +        info = directory.lstat()
 +        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
 +            raise Refusal('The UNITARES runtime directory must be a private directory owned by you.')
+@@ -275,0 +279,22 @@
++    def check_update_barrier(self):
++        directory = self.prefix / 'var/unitares'
++        journal = directory / 'native-update.json'
++        if not os.path.lexists(journal):
++            return
++        directory_info = directory.lstat()
++        journal_info = journal.lstat()
++        if (not stat.S_ISDIR(directory_info.st_mode) or directory_info.st_uid != os.getuid()
++                or directory_info.st_mode & 0o022 or not stat.S_ISREG(journal_info.st_mode)
++                or journal_info.st_uid != os.getuid() or journal_info.st_mode & 0o077):
++            raise Refusal('The native update journal is not a private regular file owned by you.')
++        try:
++            state = json.loads(journal.read_text())
++            stage = state['stage']
++        except (OSError, ValueError, TypeError, KeyError) as exc:
++            raise Refusal('The native update journal is unreadable; inspect it before starting writers.') from exc
++        if stage not in ('complete', 'aborted'):
++            raise Refusal(
++                f'Native update stage {stage!r} is unfinished; keep writers stopped and run '
++                '`unitares update --resume`.'
++            )
++
+@@ -314 +339,3 @@
+-    def start(self, check=False, timeout=60):
++    def start(self, check=False, timeout=60, allow_update_stage=False):
++        if not allow_update_stage:
++            self.check_update_barrier()
 --- /dev/null
 +++ b/scripts/install/homebrew_update.py
-@@ -0,0 +1,658 @@
+@@ -0,0 +1,696 @@
 +#!/usr/bin/env python3
 +"""Coordinate a safe update of the packaged macOS Homebrew installation.
 +
@@ -2464,8 +2495,8 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +        result = run([self.brew.brew, *args], env=env, timeout=timeout)
 +        if result.returncode:
 +            raise Refusal(
-+                f"Homebrew {' '.join(args)} failed. The database was not restored or changed by Homebrew; "
-+                "inspect the Homebrew output and resume with `unitares update --resume`."
++                f"Homebrew {' '.join(args)} failed. Inspect the Homebrew output; "
++                "if an update journal was created, continue with `unitares update --resume`."
 +            )
 +        return result
 +
@@ -2651,7 +2682,8 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                pass
 +        clients = self._database_value(
 +            "SELECT count(*) FROM pg_stat_activity "
-+            "WHERE datname=current_database() AND pid<>pg_backend_pid()"
++            "WHERE datname=current_database() AND pid<>pg_backend_pid() "
++            "AND backend_type='client backend'"
 +        )
 +        if clients != "0":
 +            raise Refusal(
@@ -2924,9 +2956,12 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +        self.write_journal(state)
 +        return self.resume(state=state)
 +
-+    def resume(self, *, state: dict | None = None) -> int:
++    def resume(
++        self, *, state: dict | None = None, accept_identity_change: bool = False
++    ) -> int:
 +        state = state or self.read_journal(required=True)
 +        assert state is not None
++        initial_stage = state["stage"]
 +        if state["stage"] in FINAL_STAGES:
 +            print(f"Native update journal is already {state['stage']}.")
 +            return 0
@@ -2938,6 +2973,21 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                "The private native configuration changed during the update. Writers remain stopped; "
 +                "inspect the configuration and journal before resuming."
 +            )
++        if accept_identity_change and state["stage"] != "verification_failed":
++            raise Refusal(
++                "--accept-identity-change is only valid for a recorded identity verification failure."
++            )
++        if state["stage"] == "verification_failed":
++            self.verify_quiesced()
++            if not accept_identity_change:
++                raise Refusal(
++                    "Identity count changed during the quiesced update. Inspect the database and backup, "
++                    "then explicitly continue with `unitares update --resume --accept-identity-change`."
++                )
++            state["agent_count_accepted"] = self.agent_count()
++            state["identity_change_accepted_at"] = _utc_now()
++            state["stage"] = "migrated"
++            self.write_journal(state)
 +        if state["stage"] == "planned":
 +            self.brew.stop()
 +            self.brew.configure()
@@ -2963,6 +3013,20 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            self.write_journal(state)
 +        if state["stage"] == "backed_up":
 +            self.verify_quiesced()
++            if initial_stage == "backed_up":
++                # A prior package attempt may have been interrupted. Refresh
++                # the evidence immediately before retrying so even writes from
++                # an external client between attempts are included.
++                previous = state.get("backup")
++                state["schema_before"] = self.schema_version()
++                state["agent_count_before"] = self.agent_count()
++                backup = self.backup_database(
++                    str(state["target"]["unitares"]["target"])
++                )
++                if previous and previous != str(backup):
++                    state.setdefault("superseded_backups", []).append(previous)
++                state["backup"] = str(backup)
++                self.write_journal(state)
 +            if self.changes(state["target"]):
 +                self.install_packages(state["target"])
 +                state["stage"] = "packages_installed"
@@ -2981,22 +3045,20 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +                self.write_journal(state)
 +                raise
 +            state["schema_after"] = self.schema_version()
-+            if self.agent_count() != state["agent_count_before"]:
++            state["agent_count_after"] = self.agent_count()
++            if state["agent_count_after"] != state["agent_count_before"]:
 +                state["stage"] = "verification_failed"
 +                self.write_journal(state)
 +                raise Refusal(
-+                    "Identity count changed during the quiesced update. Writers remain stopped; inspect the database and backup."
++                    "Identity count changed during the quiesced update. Writers remain stopped; inspect the database and backup, "
++                    "then explicitly continue with `unitares update --resume --accept-identity-change`."
 +                )
 +            state["stage"] = "migrated"
 +            self.write_journal(state)
-+        if state["stage"] in {"migrated", "restart_failed", "verification_failed"}:
-+            if state["stage"] == "verification_failed":
-+                raise Refusal(
-+                    "Resolve the recorded identity verification failure before restarting writers."
-+                )
++        if state["stage"] in {"migrated", "restart_failed"}:
 +            if state["writers_were_running"]:
 +                try:
-+                    self.brew.start()
++                    self.brew.start(allow_update_stage=True)
 +                except Refusal:
 +                    state["stage"] = "restart_failed"
 +                    self.write_journal(state)
@@ -3031,7 +3093,14 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +        action="store_true",
 +        help="confirm the coordinated update non-interactively",
 +    )
++    parser.add_argument(
++        "--accept-identity-change",
++        action="store_true",
++        help="after inspection, explicitly accept a recorded identity-count change",
++    )
 +    args = parser.parse_args(argv)
++    if args.accept_identity_change and not args.resume:
++        parser.error("--accept-identity-change requires --resume")
 +    try:
 +        brew = Homebrew()
 +        updater = NativeUpdater(brew)
@@ -3039,7 +3108,7 @@ diff --git a/src/mcp_handlers/support/inference_registry.py b/src/mcp_handlers/s
 +            return updater.begin(check=True, assume_yes=args.yes)
 +        with brew.lock():
 +            return (
-+                updater.resume()
++                updater.resume(accept_identity_change=args.accept_identity_change)
 +                if args.resume
 +                else updater.begin(check=False, assume_yes=args.yes)
 +            )

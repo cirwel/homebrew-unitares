@@ -155,11 +155,16 @@ The apply command refreshes the tap, stops both writers, verifies quiescence,
 makes and validates a private PostgreSQL backup, temporarily unpins and upgrades
 the exact managed set, reapplies the pins, runs migrations from the new keg and
 restores the prior running/stopped state after verification. If interrupted,
-the new keg resumes the durable journal:
+an unfinished journal blocks a separate `unitares start`; the new keg resumes
+the journal, refreshing the backup before a retried package transaction:
 
 ```sh
 unitares update --resume
 ```
+
+An identity-count mismatch keeps writers stopped. Inspect the database and
+backup first; if the changed count is expected, continue explicitly with
+`unitares update --resume --accept-identity-change`.
 
 Revision `3.5.0_5` predates this command. Its one-time transition to revision 6
 still requires the documented stop, verified backup, explicit four-package
