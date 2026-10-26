@@ -1,6 +1,7 @@
 {
-  "package": "3.5.0_5",
+  "package": "3.5.0_6",
   "release": "v3.5.0",
+  "release_floor_pr": 3086,
   "files": {
     ".env.example": {
       "source": "45202e282a009b7ff8987de63265c64696e547b7",
@@ -26,9 +27,13 @@
       "source": "45202e282a009b7ff8987de63265c64696e547b7 (exact PR3043 delta only)",
       "sha256": "b7a1d8a5ae632d2a1b520808390a23496fa2c2907d5b23797abc582903258521"
     },
+    "scripts/install/homebrew_update.py": {
+      "source": "cirwel/unitares#3086 @ f57a147b22f10974d803a1b1cbef8d8d70ab47a1",
+      "sha256": "8fdd316df4b361880a895f2e1eb100de78f79b89004036db903c9b519da322e1"
+    },
     "scripts/install/homebrew_services.py": {
-      "source": "c2642bcea367f3567d9225a853415b65cf681f0f",
-      "sha256": "bce7beed02c86fa83ea1350db3e2356e7646c1472a993e6a2848df0858023539"
+      "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus cirwel/unitares#3086 @ 0da229bb561120176422ef9bfacbe961cc0c7a9f",
+      "sha256": "46aa1debd9b79bf5272046dfd40ffa355b4afe63c2d8dd70a1cddf33d620a2bb"
     },
     "scripts/install/launch.sh": {
       "source": "45202e282a009b7ff8987de63265c64696e547b7",
@@ -39,8 +44,8 @@
       "sha256": "01b07152dbb12e31c0b0ccba35d146d534860cd138bb8e148e10c65fb702cd2e"
     },
     "scripts/unitares": {
-      "source": "c2642bcea367f3567d9225a853415b65cf681f0f",
-      "sha256": "99069fc187827b8706ba66a7c004f076d4030ea8c4dd36057ae3d9690f6d01dc"
+      "source": "c2642bcea367f3567d9225a853415b65cf681f0f plus cirwel/unitares#3086 @ c9b8ea95e562c8d4f0d8fa231898238ca0fbef0d",
+      "sha256": "589bd82fe9d5505609c6380f72ac46374732ee47b3fa77aedbc8b9289b82c54a"
     },
     "src/interface_contract.py": {
       "source": "45202e282a009b7ff8987de63265c64696e547b7",

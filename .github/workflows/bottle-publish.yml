@@ -1,0 +1,187 @@
+name: Publish verified bottles and draft formula PR
+
+# Publication is a distinct, protected operator action. It consumes only an
+# artifact from the fixed build workflow, verifies its run and checksums, then
+# creates a prerelease and a draft formula PR. It never merges that PR.
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful Build Apple Silicon bottles run ID
+        required: true
+      tap_commit:
+        description: Exact tap commit used by that build
+        required: true
+      bottle_tag:
+        description: Bottle release tag recorded by that build
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bottle-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'cirwel/homebrew-unitares' &&
+      github.ref == 'refs/heads/main' &&
+      vars.UNITARES_HOMEBREW_BOTTLES_ENABLED == 'true'
+    environment: homebrew-bottle-publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Verify protected environment arming secret
+        env:
+          ARMED: ${{ secrets.UNITARES_HOMEBREW_BOTTLES_ARMED }}
+        run: test "$ARMED" = true
+
+      - name: Mint a repository-scoped App token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        id: app
+        with:
+          client-id: ${{ vars.UNITARES_AGENT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.UNITARES_AGENT_APP_PRIVATE_KEY }}
+          owner: cirwel
+          repositories: homebrew-unitares
+          permission-actions: read
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Check out the built tap commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tap_commit }}
+          token: ${{ steps.app.outputs.token }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Download and verify the build artifact
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          TAP_COMMIT: ${{ inputs.tap_commit }}
+          BOTTLE_TAG: ${{ inputs.bottle_tag }}
+        run: |
+          set -euo pipefail
+          [[ "$TAP_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BOTTLE_TAG" =~ ^bottles-[A-Za-z0-9._-]+$ ]] || {
+            echo "bottle_tag must match bottles-[A-Za-z0-9._-]+" >&2
+            exit 1
+          }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > "$RUNNER_TEMP/run.json"
+          test "$(jq -r .name "$RUNNER_TEMP/run.json")" = "Build Apple Silicon bottles"
+          test "$(jq -r .path "$RUNNER_TEMP/run.json")" = ".github/workflows/bottle-build.yml"
+          test "$(jq -r .event "$RUNNER_TEMP/run.json")" = workflow_dispatch
+          test "$(jq -r .conclusion "$RUNNER_TEMP/run.json")" = success
+          test "$(jq -r .head_branch "$RUNNER_TEMP/run.json")" = main
+          test "$(jq -r .head_sha "$RUNNER_TEMP/run.json")" = "$TAP_COMMIT"
+          mkdir "$RUNNER_TEMP/bottles"
+          gh run download "$BUILD_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "homebrew-bottles-$BUILD_RUN_ID" --dir "$RUNNER_TEMP/bottles"
+          cd "$RUNNER_TEMP/bottles"
+          shasum -a 256 -c SHA256SUMS
+          test "$(jq -r .tap_ref build-metadata.json)" = "$TAP_COMMIT"
+          test "$(jq -r .bottle_tag build-metadata.json)" = "$BOTTLE_TAG"
+          test "$(jq -r .build_run_id build-metadata.json)" = "$BUILD_RUN_ID"
+          test "$(jq 'length' asset-map.json)" -eq 4
+          grep -Fq "https://github.com/cirwel/homebrew-unitares/releases/download/$BOTTLE_TAG" \
+            formula-bottles.patch
+          test "$(find . -maxdepth 1 -name '*.bottle.tar.gz' | wc -l)" -eq 4
+
+      - name: Publish immutable assets and open the draft formula PR
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          TAP_COMMIT: ${{ inputs.tap_commit }}
+          BOTTLE_TAG: ${{ inputs.bottle_tag }}
+        run: |
+          set -euo pipefail
+          branch=auto/homebrew-bottles
+          remote_ref="refs/remotes/origin/$branch"
+          lease="--force-with-lease=refs/heads/$branch:"
+          if git show-ref --verify --quiet "$remote_ref"; then
+            expected_remote="$(git rev-parse "$remote_ref")"
+            branch_base="$(git merge-base "$TAP_COMMIT" "$remote_ref")"
+            authors="$(git log --format='%ae' "$branch_base..$remote_ref")"
+            while IFS= read -r author; do
+              if [ -n "$author" ] && \
+                  [ "$author" != '342195540+unitares-agents[bot]@users.noreply.github.com' ]; then
+                echo "automation branch contains a non-bot commit; refusing to overwrite it" >&2
+                exit 1
+              fi
+            done <<< "$authors"
+            git checkout -B "$branch" "$remote_ref"
+            git reset --hard "$TAP_COMMIT"
+            lease="--force-with-lease=refs/heads/$branch:$expected_remote"
+          else
+            git checkout -B "$branch" "$TAP_COMMIT"
+          fi
+          if gh release view "$BOTTLE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --json targetCommitish,isPrerelease > "$RUNNER_TEMP/bottle-release.json" 2>/dev/null; then
+            test "$(jq -r .targetCommitish "$RUNNER_TEMP/bottle-release.json")" = "$TAP_COMMIT"
+            test "$(jq -r .isPrerelease "$RUNNER_TEMP/bottle-release.json")" = true
+          else
+            gh release create "$BOTTLE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --target "$TAP_COMMIT" --prerelease \
+              --title "Apple Silicon bottles $BOTTLE_TAG" \
+              --notes "Built from tap commit $TAP_COMMIT by workflow run $BUILD_RUN_ID."
+          fi
+          git fetch --force --no-tags origin "refs/tags/$BOTTLE_TAG"
+          test "$(git rev-parse 'FETCH_HEAD^{commit}')" = "$TAP_COMMIT"
+          mkdir "$RUNNER_TEMP/publish-bottles"
+          while IFS=$'\t' read -r local_name published_name; do
+            [[ "$local_name" =~ ^[A-Za-z0-9._+-]+$ ]]
+            [[ "$published_name" =~ ^[A-Za-z0-9._+-]+$ ]]
+            cp "$RUNNER_TEMP/bottles/$local_name" \
+              "$RUNNER_TEMP/publish-bottles/$published_name"
+          done < <(jq -r '.[] | [.local_filename, .filename] | @tsv' \
+            "$RUNNER_TEMP/bottles/asset-map.json")
+          test "$(find "$RUNNER_TEMP/publish-bottles" -maxdepth 1 -name '*.bottle.tar.gz' | wc -l)" -eq 4
+          missing_assets=()
+          for asset in "$RUNNER_TEMP"/publish-bottles/*.bottle.tar.gz; do
+            name=$(basename "$asset")
+            existing="$RUNNER_TEMP/existing-$name"
+            if gh release download "$BOTTLE_TAG" --repo "$GITHUB_REPOSITORY" \
+                --pattern "$name" --output "$existing" 2>/dev/null; then
+              cmp "$asset" "$existing" || {
+                echo "published asset $name differs; refusing to overwrite it" >&2
+                exit 1
+              }
+            else
+              missing_assets+=("$asset")
+            fi
+          done
+          for asset in "${missing_assets[@]}"; do
+            gh release upload "$BOTTLE_TAG" "$asset" --repo "$GITHUB_REPOSITORY"
+          done
+          git apply --index --include='Formula/*.rb' \
+            "$RUNNER_TEMP/bottles/formula-bottles.patch"
+          actual_paths="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' Formula/apache-age.rb \
+            Formula/unitares-lease-plane.rb Formula/unitares-pgvector.rb \
+            Formula/unitares.rb | LC_ALL=C sort)"
+          test "$actual_paths" = "$expected_paths"
+          git config user.name "unitares-agents[bot]"
+          git config user.email "342195540+unitares-agents[bot]@users.noreply.github.com"
+          git commit -m "chore(bottles): add Apple Silicon bottles"
+          git push "$lease" --force-if-includes origin "HEAD:refs/heads/$branch"
+          body="$RUNNER_TEMP/bottle-pr-body.md"
+          printf '%s\n' \
+            "This draft adds Apple Silicon bottles built from tap commit $TAP_COMMIT." \
+            "" \
+            "Evidence: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" \
+            "Assets: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$BOTTLE_TAG" \
+            "" \
+            "Keep this draft until installed bottle acceptance passes. This workflow never authorizes or performs a merge." \
+            > "$body"
+          existing="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --repo "$GITHUB_REPOSITORY" \
+              --title "chore(bottles): add Apple Silicon bottles" --body-file "$body"
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+              --draft --title "chore(bottles): add Apple Silicon bottles" --body-file "$body"
+          fi

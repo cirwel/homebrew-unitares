@@ -16,7 +16,7 @@ permissions:
 jobs:
   installed-package:
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - name: Check out the candidate tap
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -42,8 +42,48 @@ jobs:
           brew update
           brew tap --custom-remote cirwel/unitares "file://$GITHUB_WORKSPACE"
           brew trust cirwel/unitares
-          brew install --build-from-source cirwel/unitares/unitares
+          bottle_tag=""
+          bottled_formulae="$RUNNER_TEMP/bottled-formulae.txt"
+          : > "$bottled_formulae"
+          for formula in apache-age unitares-pgvector unitares-lease-plane unitares; do
+            file="Formula/$formula.rb"
+            if grep -q '^  bottle do$' "$file"; then
+              printf '%s\n' "$formula" >> "$bottled_formulae"
+              tag="$(sed -n 's#^    root_url "https://github.com/cirwel/homebrew-unitares/releases/download/\([A-Za-z0-9._-]*\)"$#\1#p' "$file")"
+              test -n "$tag"
+              if [ -n "$bottle_tag" ]; then
+                test "$tag" = "$bottle_tag"
+              else
+                bottle_tag="$tag"
+                git fetch --force --no-tags origin "refs/tags/$bottle_tag"
+              fi
+              ruby -0pe 'abort "bottle block layout not recognized" unless $_.sub!(/\n\n  bottle do\n(?:    .*\n)+?  end\n/, "\n")' \
+                "$file" > "$RUNNER_TEMP/$formula.without-bottle.rb"
+              git show "FETCH_HEAD:$file" > "$RUNNER_TEMP/$formula.bottle-source.rb"
+              cmp "$RUNNER_TEMP/$formula.without-bottle.rb" \
+                "$RUNNER_TEMP/$formula.bottle-source.rb" || {
+                echo "$file differs from bottle source $bottle_tag; remove its stale bottle block and bump revision" >&2
+                exit 1
+              }
+            fi
+          done
+          if grep -qx unitares "$bottled_formulae"; then
+            brew install cirwel/unitares/unitares
+          else
+            brew install --build-from-source cirwel/unitares/unitares
+          fi
           brew info --json=v2 unitares > "$RUNNER_TEMP/installed-formula.json"
+          brew info --json=v2 --formula \
+            cirwel/unitares/unitares \
+            cirwel/unitares/unitares-lease-plane \
+            cirwel/unitares/apache-age \
+            cirwel/unitares/unitares-pgvector \
+            > "$RUNNER_TEMP/installed-managed-formulae.json"
+          while IFS= read -r formula; do
+            jq -e --arg formula "$formula" \
+              '.formulae[] | select(.name == $formula) | .installed[-1].poured_from_bottle == true' \
+              "$RUNNER_TEMP/installed-managed-formulae.json"
+          done < "$bottled_formulae"
 
       - name: Verify installed source provenance and dependencies
         run: |
@@ -94,6 +134,88 @@ jobs:
           HOMEBREW_UNITARES_TEST_RECOVERY_REDIS_URL: redis://127.0.0.1:56379/1
         run: scripts/check-installed.sh
 
+      - name: Provision the coordinated-update database
+        run: |
+          set -euo pipefail
+          brew services start postgresql@17
+          touch "$RUNNER_TEMP/update-postgres-owned"
+          brew services start redis
+          touch "$RUNNER_TEMP/update-redis-owned"
+          pg_bin="$(brew --prefix postgresql@17)/bin"
+          "$pg_bin/pg_isready" -h 127.0.0.1 -p 5432 -t 30
+          "$pg_bin/createuser" --superuser unitares_update
+          "$pg_bin/psql" --dbname=postgres --set=ON_ERROR_STOP=1 \
+            --command="ALTER ROLE unitares_update PASSWORD 'acceptance_only';"
+          "$pg_bin/createdb" --owner=unitares_update unitares_acceptance_brew_update
+
+      # The installed candidate is N. Publish a CI-only N+1 server revision so
+      # N's updater must replace and re-exec from a new unitares keg.
+      - name: Publish a CI-only next managed-package revision
+        run: |
+          set -euo pipefail
+          tap_repo="$(brew --repository cirwel/unitares)"
+          target_repo="$RUNNER_TEMP/update-tap-target"
+          target_remote="$RUNNER_TEMP/update-tap-remote.git"
+          candidate_sha="$(git -C "$tap_repo" rev-parse HEAD)"
+          git clone "$tap_repo" "$target_repo"
+          git -C "$target_repo" checkout -B main
+          ruby -0pi -e '$_.sub!(/\n  bottle do\n(?:    .*\n)+?  end\n/, "\n"); unless $_.sub!(/^  revision (\d+)$/) { "  revision #{$1.to_i + 1}" }; abort "license not found" unless $_.sub!(/^  license .+$/) { "#{$&}\n  revision 1" }; end' \
+            "$target_repo/Formula/unitares.rb"
+          next_revision="$(ruby -ne 'puts $1 if /^  revision (\d+)$/' \
+            "$target_repo/Formula/unitares.rb")"
+          test -n "$next_revision"
+          grep -q "^  revision ${next_revision}$" "$target_repo/Formula/unitares.rb"
+          echo "HOMEBREW_UNITARES_EXPECTED_SERVER_REVISION=$next_revision" >> "$GITHUB_ENV"
+          echo "HOMEBREW_UNITARES_TEST_TAP_TARGET=$target_repo" >> "$GITHUB_ENV"
+          echo "HOMEBREW_UNITARES_TEST_TAP_REMOTE=$target_remote" >> "$GITHUB_ENV"
+          git -C "$target_repo" config user.name homebrew-native-acceptance
+          git -C "$target_repo" config user.email homebrew-native-acceptance@invalid
+          git -C "$target_repo" add Formula/unitares.rb
+          git -C "$target_repo" commit -m 'test: publish ephemeral updater target'
+          git clone --bare "$target_repo" "$target_remote"
+          git -C "$target_remote" symbolic-ref HEAD refs/heads/main
+          git -C "$target_repo" remote set-url origin "$target_remote"
+          git -C "$tap_repo" checkout -B main "$candidate_sha"
+          git -C "$tap_repo" remote set-url origin "file://$target_remote"
+          git -C "$tap_repo" fetch origin main
+          git -C "$tap_repo" branch --set-upstream-to=origin/main main
+          test "$(git -C "$tap_repo" rev-parse HEAD)" != \
+            "$(git -C "$tap_repo" rev-parse origin/main)"
+          brew trust cirwel/unitares
+          brew info --formula cirwel/unitares/unitares >/dev/null
+
+      - name: Require an installed coordinated package update
+        env:
+          HOMEBREW_UNITARES_ACCEPTANCE_DIR: ${{ runner.temp }}/homebrew-acceptance
+          HOMEBREW_UNITARES_TEST_UPDATE_DB_URL: postgresql://unitares_update:acceptance_only@127.0.0.1:5432/unitares_acceptance_brew_update
+        run: scripts/check-update.sh
+
+      - name: Require installed resume, abort and link recovery
+        env:
+          HOMEBREW_UNITARES_ACCEPTANCE_DIR: ${{ runner.temp }}/homebrew-acceptance
+          HOMEBREW_UNITARES_TEST_UPDATE_DB_URL: postgresql://unitares_update:acceptance_only@127.0.0.1:5432/unitares_acceptance_brew_update
+        run: scripts/check-update-recovery.sh basic
+
+      # Publish N+2 after N+1 is installed. The saved journal still names N+1,
+      # so a non-interactive resume must refuse the newly discovered target.
+      - name: Publish a second CI-only managed-package revision
+        run: |
+          set -euo pipefail
+          test -n "$HOMEBREW_UNITARES_TEST_TAP_TARGET"
+          test -n "$HOMEBREW_UNITARES_TEST_TAP_REMOTE"
+          ruby -0pi -e '$_.sub!(/\n  bottle do\n(?:    .*\n)+?  end\n/, "\n"); unless $_.sub!(/^  revision (\d+)$/) { "  revision #{$1.to_i + 1}" }; abort "license not found" unless $_.sub!(/^  license .+$/) { "#{$&}\n  revision 1" }; end' \
+            "$HOMEBREW_UNITARES_TEST_TAP_TARGET/Formula/unitares.rb"
+          git -C "$HOMEBREW_UNITARES_TEST_TAP_TARGET" add Formula/unitares.rb
+          git -C "$HOMEBREW_UNITARES_TEST_TAP_TARGET" \
+            commit -m 'test: publish second ephemeral updater target'
+          git -C "$HOMEBREW_UNITARES_TEST_TAP_TARGET" push origin main
+
+      - name: Require explicit consent for a changed resume target
+        env:
+          HOMEBREW_UNITARES_ACCEPTANCE_DIR: ${{ runner.temp }}/homebrew-acceptance
+          HOMEBREW_UNITARES_TEST_UPDATE_DB_URL: postgresql://unitares_update:acceptance_only@127.0.0.1:5432/unitares_acceptance_brew_update
+        run: scripts/check-update-recovery.sh target-consent
+
       - name: Preserve installed-artifact evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -101,18 +223,29 @@ jobs:
           name: homebrew-native-acceptance
           path: |
             ${{ runner.temp }}/installed-formula.json
-            ${{ runner.temp }}/homebrew-acceptance/*/*.log
-            ${{ runner.temp }}/homebrew-acceptance/*/*.json
+            ${{ runner.temp }}/installed-managed-formulae.json
+            ${{ runner.temp }}/homebrew-acceptance/**/*.log
+            ${{ runner.temp }}/homebrew-acceptance/**/*.json
+            ${{ runner.temp }}/homebrew-acceptance/**/backup-list.txt
             ${{ runner.temp }}/postgres.log
             ${{ runner.temp }}/redis.log
 
       - name: Stop only the services this job started
         if: always()
         run: |
+          if command -v unitares >/dev/null 2>&1; then
+            unitares stop || true
+          fi
           if [ -f "$RUNNER_TEMP/acceptance-redis/server.pid" ]; then
             kill "$(cat "$RUNNER_TEMP/acceptance-redis/server.pid")"
           fi
           if [ -f "$RUNNER_TEMP/postgres-owned" ]; then
             "$(brew --prefix postgresql@17)/bin/pg_ctl" \
               -D "$RUNNER_TEMP/acceptance-postgres" stop -m smart -w -t 20
+          fi
+          if [ -f "$RUNNER_TEMP/update-redis-owned" ]; then
+            brew services stop redis
+          fi
+          if [ -f "$RUNNER_TEMP/update-postgres-owned" ]; then
+            brew services stop postgresql@17
           fi

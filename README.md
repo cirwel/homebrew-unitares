@@ -2,7 +2,8 @@
 
 Native macOS packages for [UNITARES](https://github.com/cirwel/unitares): the
 server, coordination lease plane, PostgreSQL 17 with Apache AGE and pgvector,
-and Redis. Docker is not required.
+and Redis. This is the recommended installation for an Apple Silicon desktop
+Mac; Docker remains the portable choice for servers, CI and non-macOS hosts.
 
 This is a **preview for Apple Silicon Macs**. Installation builds from source;
 no bottles are published. Database creation, bootstrap and upgrades remain
@@ -19,12 +20,12 @@ brew update
 brew tap cirwel/unitares
 brew trust cirwel/unitares
 brew install cirwel/unitares/unitares
-brew pin unitares unitares-lease-plane
+brew pin unitares unitares-lease-plane apache-age unitares-pgvector
 ```
 
-The server package is **3.5.0 revision 5** (`3.5.0_5`); its upstream runtime
-version still reports `3.5.0`. Revision 5 publishes the validated native setup
-and optional-model backports with public tap names and documentation.
+The server package is **3.5.0 revision 6** (`3.5.0_6`); its upstream runtime
+version still reports `3.5.0`. Revision 6 adds the coordinated native updater
+to the validated setup and optional-model backports.
 [SOURCES.json](SOURCES.json) records the backports and installed file hashes.
 
 Choose one primary installation per Mac. A Docker/Colima deployment already
@@ -141,16 +142,81 @@ Python environment, since upgrades replace it.
 
 ## Upgrades and recovery
 
-Keep the server and lease-plane packages pinned until you have selected and
-reviewed a target revision. `unitares update` is Compose-only and refuses this
-native installation. A bare `brew upgrade` is not a database upgrade procedure.
+Keep all four managed packages pinned between explicit UNITARES updates. A
+bare `brew upgrade` is not a database upgrade procedure. Check the locally
+cached plan without changing the host, or perform the coordinated update:
 
-Stop both writers with `unitares stop` and verify they exited. Take and verify
-a PostgreSQL backup and preserve the private configuration. Retain the old kegs
-while installing the chosen target. Apply any required migrations explicitly
-with the installed package's Python and `scripts/dev/apply_migrations.py`,
-including `--dialectic-writers-quiesced`, then restart and verify deep health
-and existing identities before moving clients or deleting backups.
+```sh
+unitares update --check
+unitares update
+```
+
+The apply command refreshes the tap, stops both writers, verifies quiescence,
+makes and validates a private PostgreSQL backup, temporarily unpins and upgrades
+the managed set and any dependencies Homebrew requires, records the complete
+installed-formula inventory before and after, reapplies the managed pins, runs
+migrations from the new keg and restores prior service state. If interrupted,
+an unfinished journal blocks a separate `unitares start`; the new keg resumes
+the journal, refreshing the tap target and backup before a retried package
+transaction. If the target changed, resume asks again before adopting it:
+
+```sh
+unitares update --resume
+```
+
+If an interrupted Homebrew link step removes `unitares` from `PATH`, use
+`$(brew --prefix)/opt/unitares/bin/unitares update --resume`. The updater repairs
+missing managed links without overwriting conflicting prefix files.
+
+An identity-count mismatch keeps writers stopped. Inspect the database and
+backup first; if the changed count is expected, continue explicitly with
+`unitares update --resume --accept-identity-change`.
+
+If a package build cannot succeed, `unitares update --abort` restores the prior
+state while every managed package and the schema still match their recorded
+pre-update versions. Dependency changes made by the failed transaction are
+retained and recorded. Once a managed package or the schema changed, abort
+refuses and `--resume` remains mandatory. Direct `brew services` commands bypass
+the journal guard.
+
+Verified database backups are indexed separately from Homebrew kegs. Preview
+the conservative retention plan, then apply that exact eligible set explicitly:
+
+```sh
+unitares update --cleanup-backups
+unitares update --cleanup-backups --retain-backups 3 --older-than-days 30 --yes
+```
+
+Cleanup verifies each existing indexed dump again, counts only those verified
+files toward the retention floor, protects any dump referenced by an update
+journal, and records deletions in its own resumable journal. Missing-file index
+records appear in the dry run and are reconciled only with `--yes`. It never
+deletes an unindexed file. The dry run records the candidate set and policy
+privately, so `--yes` resumes the exact reviewed plan while rechecking newly
+protected backups. It never removes Homebrew kegs; `brew cleanup` remains a
+separate package-manager decision after the new installation and database have
+been independently verified.
+
+Revision `3.5.0_5` predates this command. Its one-time transition to revision 6
+still requires the documented stop, verified backup, explicit four-package
+unpin/upgrade/repin procedure:
+
+```sh
+unitares stop
+# Take and verify the PostgreSQL backup described in the linked procedure.
+brew unpin unitares unitares-lease-plane apache-age unitares-pgvector
+HOMEBREW_NO_INSTALL_CLEANUP=1 brew upgrade --formula cirwel/unitares/unitares \
+  cirwel/unitares/unitares-lease-plane cirwel/unitares/apache-age \
+  cirwel/unitares/unitares-pgvector
+brew pin unitares unitares-lease-plane apache-age unitares-pgvector
+unitares update --check
+# If both writers were running before the transition: unitares start
+```
+
+Revision 6 changes the package lifecycle but adds no schema migration. Later
+upgrades use the coordinated path above. Reinstalling an older keg does not
+reverse a database migration. Retain the old kegs and verified backup until the
+new installation has passed its checks.
 
 See the upstream [backup, migration and rollback procedure](https://github.com/cirwel/unitares/blob/v3.5.0/docs/manual/02-install.md#updating-a-bare-metal-or-launchagent-install).
 Use scripts from `$(brew --prefix unitares)/libexec/app` and its sibling
@@ -161,6 +227,41 @@ Homebrew keg. Reinstalling an older keg does not reverse a database migration.
 
 [Installed acceptance](.github/workflows/native-acceptance.yml) builds the
 candidate tap on an isolated Apple Silicon macOS runner, checks installed source
-hashes and Python dependencies, and requires fresh bootstrap plus interrupted
-recovery against the installed package. See [VALIDATION.md](VALIDATION.md) for
+hashes and Python dependencies, requires fresh bootstrap plus interrupted
+recovery, and exercises a real coordinated managed-package update with backup,
+pin, journal and data-preservation checks. See [VALIDATION.md](VALIDATION.md) for
 prior VM/M1 evidence and its limits.
+
+## Maintainer release and bottle workflow
+
+Stable upstream releases own a deterministic `unitares-VERSION.tar.gz` asset.
+The coordinated upstream
+[UNITARES change](https://github.com/cirwel/unitares/pull/3086) adds a guarded
+release workflow that builds or verifies that immutable asset, runs this tap's
+offline renderer, and opens or updates `auto/homebrew-release-sync` as a draft
+PR. The renderer advances both `unitares` and its release-coupled lease-plane
+formula. It refuses mutable GitHub source archives, downgrades, missing
+tracked sources, or removal of the v3.5.0 DATA backport before the release
+commit contains the manifest's reviewed backport floor. It never marks the PR
+ready or merges it. This repository's
+manual [draft release sync](.github/workflows/release-sync.yml) is a protected
+recovery path using the same renderer and evidence contract.
+
+Apple Silicon bottles are a secondary optimization, not the primary install
+contract. A protected manual [build](.github/workflows/bottle-build.yml) spends
+a macOS runner only after approval and emits an untrusted artifact without any
+write credential. A separate protected
+[publish](.github/workflows/bottle-publish.yml) verifies the successful run,
+commit, metadata and every checksum, publishes non-overwriting prerelease
+assets, and opens a draft formula PR. Publication never authorizes merge; the
+installed acceptance job must pass again against the exact bottle formula.
+Any later updater backport strips the `unitares` bottle block and increments
+the formula revision. When bottle blocks are present, acceptance first requires
+every formula without that block to match the exact bottle-tag commit, so an
+obsolete bottle cannot silently mask formula changes.
+These jobs fail closed until the operator configures their named environments,
+adds the matching environment-scoped arming secret
+(`UNITARES_HOMEBREW_RELEASE_SYNC_ARMED` or
+`UNITARES_HOMEBREW_BOTTLES_ARMED`) with value `true`, and sets
+`UNITARES_HOMEBREW_RELEASE_SYNC_ENABLED` or
+`UNITARES_HOMEBREW_BOTTLES_ENABLED` to `true` in the relevant repository.
