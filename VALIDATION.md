@@ -6,7 +6,7 @@ every tracked installed file. Both release-coupled formulae pin the same
 SHA-256-verified release asset; `unitares` remains restricted to Apple Silicon
 macOS and builds from source.
 
-Before publication, installed revision 4 passed on an isolated Apple Silicon
+Before publication, installed `3.5.0_4` passed on an isolated Apple Silicon
 macOS VM:
 
 - All 14 then-current backported source hashes, private-venv `pip check`, and
@@ -28,7 +28,7 @@ custom-format database dump were retained. This revision introduced no SQL
 migrations. The dump was checked with `pg_restore --list`, not round-trip
 restored during that particular rollout.
 
-Revision 6 public CI builds the candidate on an isolated Apple Silicon runner,
+The `3.5.0_6` public CI builds the candidate on an isolated Apple Silicon runner,
 verifies all 15 installed-source hashes and Python dependencies, runs formula
 tests, provisions dedicated PostgreSQL and Redis instances, and requires fresh
 bootstrap plus interrupted-migration recovery. It then publishes an ephemeral

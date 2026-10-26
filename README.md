@@ -198,9 +198,8 @@ protected backups. It never removes Homebrew kegs; `brew cleanup` remains a
 separate package-manager decision after the new installation and database have
 been independently verified.
 
-Revision `3.5.0_5` predates this command. Its one-time transition to revision 6
-still requires the documented stop, verified backup, explicit four-package
-unpin/upgrade/repin procedure:
+Revision `3.5.0_5` predates this command. Upgrade it with the documented stop,
+verified backup, and explicit four-package unpin/upgrade/repin procedure:
 
 ```sh
 unitares stop
