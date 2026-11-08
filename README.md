@@ -249,11 +249,13 @@ recovery path using the same renderer and evidence contract.
 
 Apple Silicon bottles are a secondary optimization, not the primary install
 contract. A protected manual [build](.github/workflows/bottle-build.yml) spends
-a macOS runner only after approval and emits an untrusted artifact without any
-write credential. A separate protected
+a macOS runner only after approval and signs the bottles and evidence with
+GitHub artifact attestations. Its token can write attestations but cannot
+publish releases or change branches. A separate protected
 [publish](.github/workflows/bottle-publish.yml) verifies the successful run,
-commit, metadata and every checksum, publishes non-overwriting prerelease
-assets, and opens a draft formula PR. Publication never authorizes merge; the
+commit, signing workflow, certificate run/attempt and every signed manifest
+checksum before minting its publication token. It publishes non-overwriting
+prerelease assets, including the inventory and evidence manifest, and opens a draft formula PR. Publication never authorizes merge; the
 installed acceptance job must pass again against the exact bottle formula.
 Any later updater backport strips the `unitares` bottle block and increments
 the formula revision. When bottle blocks are present, acceptance first requires
@@ -265,3 +267,76 @@ adds the matching environment-scoped arming secret
 `UNITARES_HOMEBREW_BOTTLES_ARMED`) with value `true`, and sets
 `UNITARES_HOMEBREW_RELEASE_SYNC_ENABLED` or
 `UNITARES_HOMEBREW_BOTTLES_ENABLED` to `true` in the relevant repository.
+
+
+## Verify a downloaded package
+
+A checksum detects a changed download only if the expected checksum is trusted.
+A signed attestation additionally identifies the repository, workflow and source
+commit responsible for those bytes. Neither proves that the source or a dependency
+is benign. Review, restricted runtime privileges and independent rebuilds address
+other parts of that risk. These workflows do not establish reproducible builds.
+
+For releases made with the new attesting workflows, use a current
+[GitHub CLI](https://cli.github.com/manual/gh_attestation_verify) authenticated for
+public-repository reads. Choose the expected full commit from a reviewed release
+or tap PR independently of the downloaded metadata. Do not copy an expected commit
+from an unverified manifest and treat that as verification.
+
+For a source archive (replace the example version and commit):
+
+```sh
+version=3.7.0
+commit=REVIEWED_40_CHARACTER_UPSTREAM_COMMIT
+gh release download "v$version" --repo cirwel/unitares \
+  --pattern "unitares-$version.tar.gz"
+gh attestation verify "unitares-$version.tar.gz" --repo cirwel/unitares \
+  --signer-workflow cirwel/unitares/.github/workflows/homebrew-release-sync.yml \
+  --source-ref "refs/tags/v$version" --source-digest "$commit" \
+  --signer-digest "$commit" --deny-self-hosted-runners
+```
+
+For a full bottle release, use `scripts/bottle_provenance.py` from a trusted tap
+checkout, never a script downloaded alongside an unverified artifact:
+
+```sh
+tag=bottles-RELEASE_NAME
+commit=REVIEWED_40_CHARACTER_TAP_BUILD_COMMIT
+mkdir bottle-evidence
+gh release download "$tag" --repo cirwel/homebrew-unitares --dir bottle-evidence
+python3 scripts/bottle_provenance.py verify bottle-evidence \
+  --tap-commit "$commit" --bottle-tag "$tag"
+```
+
+This verifies the manifest's signature against a fixed repository/workflow policy,
+binds the declared run and attempt to the signing certificate, then checks all
+four bottles and all accompanying evidence. Missing, extra, modified or linked
+files fail closed. Publication performs the same checks, and installed acceptance
+also verifies the actual cached bottles before installation. Ordinary `brew install`
+still uses Homebrew's checksum checks; it does not automatically run this verifier.
+
+Each bottle also has its own attestation. Before installing, fetch it into the
+Homebrew cache and verify the bytes (repeat for each of the four tap formulae):
+
+```sh
+HOMEBREW_NO_AUTO_UPDATE=1 brew fetch --force-bottle cirwel/unitares/unitares
+gh attestation verify "$(brew --cache --force-bottle cirwel/unitares/unitares)" \
+  --repo cirwel/homebrew-unitares \
+  --signer-workflow cirwel/homebrew-unitares/.github/workflows/bottle-build.yml \
+  --source-ref refs/heads/main --source-digest "$commit" \
+  --signer-digest "$commit" --deny-self-hosted-runners
+```
+
+The signed `brew-inventory.json` and `brew-config.txt` record installed versions
+and the builder environment; `SOURCES.json` records the packaged source hashes.
+Python requirements are hash-locked and the lease-plane source carries `mix.lock`,
+but Homebrew core dependencies still follow `brew update`. The inventory is an
+audit record, not a complete dependency lock or a standard SBOM. A compromised
+trusted builder or malicious reviewed source can still produce valid attestations.
+
+Old source assets and old build artifacts have no retrospective guarantee. The
+recovery/publish workflows now refuse them if provenance is absent. Cut a new
+upstream release containing the attesting workflow, and build bottles from a tap
+commit containing it. Upstream manual dispatch must use `--ref "$TAG"`; checking
+out an old tag from a run on `master` cannot supply that tag's signing identity.
+No bottle publication or billed build is enabled by these changes.

@@ -12,6 +12,7 @@ concurrency:
 
 permissions:
   contents: read
+  attestations: read
 
 jobs:
   installed-package:
@@ -36,6 +37,7 @@ jobs:
       - name: Install the candidate formula and its pinned dependencies
         env:
           HOMEBREW_NO_AUTO_UPDATE: '1'
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test "$(uname -m)" = arm64
@@ -67,6 +69,24 @@ jobs:
               }
             fi
           done
+          if [ -n "$bottle_tag" ]; then
+            tap_commit="$(git rev-parse 'FETCH_HEAD^{commit}')"
+            mkdir "$RUNNER_TEMP/bottle-evidence"
+            gh release download "$bottle_tag" --repo cirwel/homebrew-unitares \
+              --dir "$RUNNER_TEMP/bottle-evidence"
+            python3 scripts/bottle_provenance.py verify "$RUNNER_TEMP/bottle-evidence" \
+              --tap-commit "$tap_commit" --bottle-tag "$bottle_tag"
+            while IFS= read -r formula; do
+              brew fetch --force-bottle "cirwel/unitares/$formula"
+              cached="$(brew --cache --force-bottle "cirwel/unitares/$formula")"
+              gh attestation verify "$cached" --repo cirwel/homebrew-unitares \
+                --signer-workflow cirwel/homebrew-unitares/.github/workflows/bottle-build.yml \
+                --source-ref refs/heads/main --source-digest "$tap_commit" \
+                --signer-digest "$tap_commit" --deny-self-hosted-runners \
+                --format json > "$RUNNER_TEMP/bottle-verification.json"
+              jq -e 'type == "array" and length > 0' "$RUNNER_TEMP/bottle-verification.json"
+            done < "$bottled_formulae"
+          fi
           if grep -qx unitares "$bottled_formulae"; then
             brew install cirwel/unitares/unitares
           else
