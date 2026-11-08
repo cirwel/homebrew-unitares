@@ -22,6 +22,7 @@ on:
 
 permissions:
   contents: read
+  attestations: read
 
 concurrency:
   group: homebrew-release-sync
@@ -66,6 +67,9 @@ jobs:
           ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
         run: |
           set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
           test "$TAG" = "v$VERSION"
           test "$(git -C _upstream rev-parse HEAD)" = "$COMMIT"
           git -C _upstream fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
@@ -74,6 +78,14 @@ jobs:
           gh release download "$TAG" --repo cirwel/unitares \
             --pattern "unitares-$VERSION.tar.gz" --output "$archive"
           test "$(sha256sum "$archive" | cut -d' ' -f1)" = "$ARCHIVE_SHA256"
+          # Public upstream attestations are readable cross-repository without
+          # adding an attestation grant to the shared release App.
+          gh attestation verify "$archive" --repo cirwel/unitares \
+            --signer-workflow cirwel/unitares/.github/workflows/homebrew-release-sync.yml \
+            --source-ref "refs/tags/$TAG" --source-digest "$COMMIT" \
+            --signer-digest "$COMMIT" --deny-self-hosted-runners \
+            --format json > "$RUNNER_TEMP/source-verification.json"
+          jq -e 'type == "array" and length > 0' "$RUNNER_TEMP/source-verification.json"
           mkdir "$RUNNER_TEMP/release"
           tar -tzf "$archive" > "$RUNNER_TEMP/archive-files.txt"
           if grep -Eq '(^/|(^|/)\.\.(/|$))' "$RUNNER_TEMP/archive-files.txt"; then

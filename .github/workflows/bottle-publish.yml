@@ -18,6 +18,8 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  attestations: read
 
 concurrency:
   group: bottle-publish
@@ -38,6 +40,46 @@ jobs:
           ARMED: ${{ secrets.UNITARES_HOMEBREW_BOTTLES_ARMED }}
         run: test "$ARMED" = true
 
+      # Verification policy is from the publishing workflow's trusted commit,
+      # never from the downloaded artifact or the selected old build commit.
+      - name: Check out the verification policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          path: _policy
+          persist-credentials: false
+
+      - name: Download and verify the build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          TAP_COMMIT: ${{ inputs.tap_commit }}
+          BOTTLE_TAG: ${{ inputs.bottle_tag }}
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$TAP_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BOTTLE_TAG" =~ ^bottles-[A-Za-z0-9._-]+$ ]] || {
+            echo "bottle_tag must match bottles-[A-Za-z0-9._-]+" >&2
+            exit 1
+          }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > "$RUNNER_TEMP/run.json"
+          test "$(jq -r .name "$RUNNER_TEMP/run.json")" = "Build Apple Silicon bottles"
+          test "$(jq -r .path "$RUNNER_TEMP/run.json")" = ".github/workflows/bottle-build.yml"
+          test "$(jq -r .event "$RUNNER_TEMP/run.json")" = workflow_dispatch
+          test "$(jq -r .conclusion "$RUNNER_TEMP/run.json")" = success
+          test "$(jq -r .head_branch "$RUNNER_TEMP/run.json")" = main
+          test "$(jq -r .head_sha "$RUNNER_TEMP/run.json")" = "$TAP_COMMIT"
+          mkdir "$RUNNER_TEMP/bottles"
+          gh run download "$BUILD_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "homebrew-bottles-$BUILD_RUN_ID" --dir "$RUNNER_TEMP/bottles"
+          python3 _policy/scripts/bottle_provenance.py verify "$RUNNER_TEMP/bottles" \
+            --tap-commit "$TAP_COMMIT" --bottle-tag "$BOTTLE_TAG" \
+            --build-run-id "$BUILD_RUN_ID" \
+            --build-run-attempt "$(jq -r .run_attempt "$RUNNER_TEMP/run.json")"
+          grep -Fq "https://github.com/cirwel/homebrew-unitares/releases/download/$BOTTLE_TAG" \
+            "$RUNNER_TEMP/bottles/formula-bottles.patch"
+
       - name: Mint a repository-scoped App token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         id: app
@@ -57,39 +99,6 @@ jobs:
           token: ${{ steps.app.outputs.token }}
           persist-credentials: true
           fetch-depth: 0
-
-      - name: Download and verify the build artifact
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          BUILD_RUN_ID: ${{ inputs.build_run_id }}
-          TAP_COMMIT: ${{ inputs.tap_commit }}
-          BOTTLE_TAG: ${{ inputs.bottle_tag }}
-        run: |
-          set -euo pipefail
-          [[ "$TAP_COMMIT" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$BOTTLE_TAG" =~ ^bottles-[A-Za-z0-9._-]+$ ]] || {
-            echo "bottle_tag must match bottles-[A-Za-z0-9._-]+" >&2
-            exit 1
-          }
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > "$RUNNER_TEMP/run.json"
-          test "$(jq -r .name "$RUNNER_TEMP/run.json")" = "Build Apple Silicon bottles"
-          test "$(jq -r .path "$RUNNER_TEMP/run.json")" = ".github/workflows/bottle-build.yml"
-          test "$(jq -r .event "$RUNNER_TEMP/run.json")" = workflow_dispatch
-          test "$(jq -r .conclusion "$RUNNER_TEMP/run.json")" = success
-          test "$(jq -r .head_branch "$RUNNER_TEMP/run.json")" = main
-          test "$(jq -r .head_sha "$RUNNER_TEMP/run.json")" = "$TAP_COMMIT"
-          mkdir "$RUNNER_TEMP/bottles"
-          gh run download "$BUILD_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --name "homebrew-bottles-$BUILD_RUN_ID" --dir "$RUNNER_TEMP/bottles"
-          cd "$RUNNER_TEMP/bottles"
-          shasum -a 256 -c SHA256SUMS
-          test "$(jq -r .tap_ref build-metadata.json)" = "$TAP_COMMIT"
-          test "$(jq -r .bottle_tag build-metadata.json)" = "$BOTTLE_TAG"
-          test "$(jq -r .build_run_id build-metadata.json)" = "$BUILD_RUN_ID"
-          test "$(jq 'length' asset-map.json)" -eq 4
-          grep -Fq "https://github.com/cirwel/homebrew-unitares/releases/download/$BOTTLE_TAG" \
-            formula-bottles.patch
-          test "$(find . -maxdepth 1 -name '*.bottle.tar.gz' | wc -l)" -eq 4
 
       - name: Publish immutable assets and open the draft formula PR
         env:
@@ -131,17 +140,8 @@ jobs:
           fi
           git fetch --force --no-tags origin "refs/tags/$BOTTLE_TAG"
           test "$(git rev-parse 'FETCH_HEAD^{commit}')" = "$TAP_COMMIT"
-          mkdir "$RUNNER_TEMP/publish-bottles"
-          while IFS=$'\t' read -r local_name published_name; do
-            [[ "$local_name" =~ ^[A-Za-z0-9._+-]+$ ]]
-            [[ "$published_name" =~ ^[A-Za-z0-9._+-]+$ ]]
-            cp "$RUNNER_TEMP/bottles/$local_name" \
-              "$RUNNER_TEMP/publish-bottles/$published_name"
-          done < <(jq -r '.[] | [.local_filename, .filename] | @tsv' \
-            "$RUNNER_TEMP/bottles/asset-map.json")
-          test "$(find "$RUNNER_TEMP/publish-bottles" -maxdepth 1 -name '*.bottle.tar.gz' | wc -l)" -eq 4
           missing_assets=()
-          for asset in "$RUNNER_TEMP"/publish-bottles/*.bottle.tar.gz; do
+          for asset in "$RUNNER_TEMP"/bottles/*; do
             name=$(basename "$asset")
             existing="$RUNNER_TEMP/existing-$name"
             if gh release download "$BOTTLE_TAG" --repo "$GITHUB_REPOSITORY" \

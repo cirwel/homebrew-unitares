@@ -1,8 +1,8 @@
 name: Build Apple Silicon bottles
 
 # Building bottles consumes a billed Apple Silicon runner, so it is manual and
-# protected. This job produces an artifact only; it has no write credential and
-# cannot publish a release or change a formula branch.
+# protected. This job may write attestations, but cannot publish a release or
+# change a formula branch.
 on:
   workflow_dispatch:
     inputs:
@@ -22,6 +22,10 @@ concurrency:
 
 jobs:
   build:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     if: >-
       github.repository == 'cirwel/homebrew-unitares' &&
       github.ref == 'refs/heads/main' &&
@@ -80,14 +84,22 @@ jobs:
             > "$RUNNER_TEMP/bottles/formula-bottles.patch"
           test -s "$RUNNER_TEMP/bottles/formula-bottles.patch"
           jq -n --arg tap_ref "$TAP_REF" --arg bottle_tag "$BOTTLE_TAG" \
-            --arg run_id "$GITHUB_RUN_ID" \
-            '{schema_version:1,tap_ref:$tap_ref,bottle_tag:$bottle_tag,build_run_id:$run_id}' \
+            --arg run_id "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" \
+            '{schema_version:1,tap_ref:$tap_ref,bottle_tag:$bottle_tag,build_run_id:$run_id,build_run_attempt:$attempt}' \
             > "$RUNNER_TEMP/bottles/build-metadata.json"
-          cd "$RUNNER_TEMP/bottles"
-          shasum -a 256 ./*.bottle.tar.gz ./*.bottle.json asset-map.json formula-bottles.patch build-metadata.json \
-            > SHA256SUMS
+          cp SOURCES.json "$RUNNER_TEMP/bottles/"
+          brew config > "$RUNNER_TEMP/bottles/brew-config.txt"
+          brew info --json=v2 --installed > "$RUNNER_TEMP/bottles/brew-inventory.json"
+          python3 scripts/bottle_provenance.py prepare "$RUNNER_TEMP/bottles" \
+            --tap-commit "$TAP_REF" --bottle-tag "$BOTTLE_TAG" \
+            --build-run-id "$GITHUB_RUN_ID" --build-run-attempt "$GITHUB_RUN_ATTEMPT"
 
-      - name: Upload the untrusted build artifact
+      - name: Attest bottles and their complete evidence manifest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: ${{ runner.temp }}/bottles/*
+
+      - name: Upload the build artifact for independent verification
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: homebrew-bottles-${{ github.run_id }}

@@ -1,0 +1,16 @@
+name: Release provenance policy tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Exercise release rendering and provenance refusal paths offline
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
