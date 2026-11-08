@@ -22,6 +22,7 @@ on:
 
 permissions:
   contents: read
+  attestations: read
 
 concurrency:
   group: homebrew-release-sync
@@ -77,6 +78,8 @@ jobs:
           gh release download "$TAG" --repo cirwel/unitares \
             --pattern "unitares-$VERSION.tar.gz" --output "$archive"
           test "$(sha256sum "$archive" | cut -d' ' -f1)" = "$ARCHIVE_SHA256"
+          # Public upstream attestations are readable cross-repository without
+          # adding an attestation grant to the shared release App.
           gh attestation verify "$archive" --repo cirwel/unitares \
             --signer-workflow cirwel/unitares/.github/workflows/homebrew-release-sync.yml \
             --source-ref "refs/tags/$TAG" --source-digest "$COMMIT" \
