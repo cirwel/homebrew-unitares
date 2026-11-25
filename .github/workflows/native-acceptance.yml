@@ -26,12 +26,24 @@ jobs:
 
       # Keep the separately reviewed harness pinned; it operates on the
       # installed keg, not a mutable server source checkout.
+      # 56a674b is the commit the v4.1.0 tag points at. From 4.1.0, fresh
+      # bootstrap requires --install-id and a prepared-database marker.
       - name: Check out the reviewed acceptance harness
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: cirwel/unitares
-          ref: 1cbe3c62a7a1d8fa83776beca6eb317f9aeb618b
+          ref: 56a674bfedc7e4a41e31fcb9ab162a43e7e9dab8
           path: _acceptance
+          persist-credentials: false
+
+      # Kegs before 4.1.0 reject --install-id, so they keep the harness
+      # reviewed for them. Remove this once main packages 4.1.0 or later.
+      - name: Check out the acceptance harness for kegs before 4.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: cirwel/unitares
+          ref: 1cbe3c62a7a1d8fa83776beca6eb317f9aeb618b
+          path: _acceptance-pre-4.1
           persist-credentials: false
 
       - name: Install the candidate formula and its pinned dependencies
@@ -105,6 +117,36 @@ jobs:
               "$RUNNER_TEMP/installed-managed-formulae.json"
           done < "$bottled_formulae"
 
+      # Decide once which first-time setup the installed keg supports and
+      # reuse UNITARES_SETUP_ROUTE everywhere. From 4.1.0 `unitares setup
+      # --provision-db` exists and bootstrap requires --install-id; older
+      # kegs have neither. Both markers must agree. Remove the manual route
+      # once main packages 4.1.0 or later.
+      - name: Select the first-time setup route for the installed keg
+        run: |
+          set -euo pipefail
+          app="$(brew --prefix unitares)/libexec/app"
+          services="$app/scripts/install/homebrew_services.py"
+          bootstrap="$app/scripts/install/bootstrap_postgres.sh"
+          for file in "$services" "$bootstrap"; do
+            test -f "$file" || { echo "missing installed file: $file" >&2; exit 1; }
+          done
+          provision=0
+          if grep -Eq "^[[:space:]]*setup\.add_argument\('--provision-db'" "$services"; then
+            provision=1
+          fi
+          install_id=0
+          if grep -Eq '^[[:space:]]*--install-id\)$' "$bootstrap"; then
+            install_id=1
+          fi
+          if [ "$provision" != "$install_id" ]; then
+            echo "setup route markers disagree: --provision-db=$provision, --install-id=$install_id" >&2
+            exit 1
+          fi
+          if [ "$provision" = 1 ]; then route=provision-db; else route=manual; fi
+          echo "Installed keg setup route: $route"
+          echo "UNITARES_SETUP_ROUTE=$route" >> "$GITHUB_ENV"
+
       - name: Verify installed source provenance and dependencies
         run: |
           set -euo pipefail
@@ -152,11 +194,37 @@ jobs:
           HOMEBREW_UNITARES_TEST_RECOVERY_DB_URL: postgresql://127.0.0.1:55432/unitares_acceptance_brew_interrupted
           HOMEBREW_UNITARES_TEST_FRESH_REDIS_URL: redis://127.0.0.1:56379/0
           HOMEBREW_UNITARES_TEST_RECOVERY_REDIS_URL: redis://127.0.0.1:56379/1
-        run: scripts/check-installed.sh
+        run: |
+          set -euo pipefail
+          case "$UNITARES_SETUP_ROUTE" in
+            provision-db) ;;
+            manual)
+              UNITARES_ACCEPTANCE_HARNESS="$GITHUB_WORKSPACE/_acceptance-pre-4.1/scripts/ci/bootstrap_acceptance.py"
+              export UNITARES_ACCEPTANCE_HARNESS
+              ;;
+            *) echo "unknown UNITARES_SETUP_ROUTE: $UNITARES_SETUP_ROUTE" >&2; exit 1 ;;
+          esac
+          scripts/check-installed.sh
 
+      # On the provision-db route (the README's first-time setup),
+      # scripts/check-update.sh runs `unitares setup --provision-db --apply`,
+      # which starts PostgreSQL and Redis itself and creates the unitares role
+      # and database, so this step only records that the job owns those two
+      # services. The manual route creates the superuser database below; only
+      # it uses HOMEBREW_UNITARES_TEST_UPDATE_DB_URL.
       - name: Provision the coordinated-update database
         run: |
           set -euo pipefail
+          case "$UNITARES_SETUP_ROUTE" in
+            provision-db)
+              brew services info postgresql@17 redis --json |
+                jq -e 'all(.[]; .running != true)' >/dev/null
+              touch "$RUNNER_TEMP/update-postgres-owned" "$RUNNER_TEMP/update-redis-owned"
+              exit 0
+              ;;
+            manual) ;;
+            *) echo "unknown UNITARES_SETUP_ROUTE: $UNITARES_SETUP_ROUTE" >&2; exit 1 ;;
+          esac
           brew services start postgresql@17
           touch "$RUNNER_TEMP/update-postgres-owned"
           brew services start redis
@@ -213,7 +281,6 @@ jobs:
       - name: Require installed resume, abort and link recovery
         env:
           HOMEBREW_UNITARES_ACCEPTANCE_DIR: ${{ runner.temp }}/homebrew-acceptance
-          HOMEBREW_UNITARES_TEST_UPDATE_DB_URL: postgresql://unitares_update:acceptance_only@127.0.0.1:5432/unitares_acceptance_brew_update
         run: scripts/check-update-recovery.sh basic
 
       # Publish N+2 after N+1 is installed. The saved journal still names N+1,
@@ -233,7 +300,6 @@ jobs:
       - name: Require explicit consent for a changed resume target
         env:
           HOMEBREW_UNITARES_ACCEPTANCE_DIR: ${{ runner.temp }}/homebrew-acceptance
-          HOMEBREW_UNITARES_TEST_UPDATE_DB_URL: postgresql://unitares_update:acceptance_only@127.0.0.1:5432/unitares_acceptance_brew_update
         run: scripts/check-update-recovery.sh target-consent
 
       - name: Preserve installed-artifact evidence
@@ -250,22 +316,26 @@ jobs:
             ${{ runner.temp }}/postgres.log
             ${{ runner.temp }}/redis.log
 
+      # Attempt every stop even if an earlier one fails (for example a
+      # service a failed step never started), then report the failure.
       - name: Stop only the services this job started
         if: always()
         run: |
+          status=0
           if command -v unitares >/dev/null 2>&1; then
             unitares stop || true
           fi
           if [ -f "$RUNNER_TEMP/acceptance-redis/server.pid" ]; then
-            kill "$(cat "$RUNNER_TEMP/acceptance-redis/server.pid")"
+            kill "$(cat "$RUNNER_TEMP/acceptance-redis/server.pid")" || status=1
           fi
           if [ -f "$RUNNER_TEMP/postgres-owned" ]; then
             "$(brew --prefix postgresql@17)/bin/pg_ctl" \
-              -D "$RUNNER_TEMP/acceptance-postgres" stop -m smart -w -t 20
+              -D "$RUNNER_TEMP/acceptance-postgres" stop -m smart -w -t 20 || status=1
           fi
           if [ -f "$RUNNER_TEMP/update-redis-owned" ]; then
-            brew services stop redis
+            brew services stop redis || status=1
           fi
           if [ -f "$RUNNER_TEMP/update-postgres-owned" ]; then
-            brew services stop postgresql@17
+            brew services stop postgresql@17 || status=1
           fi
+          exit "$status"
