@@ -2,7 +2,8 @@
 # Exercise recovery branches through the installed updater on disposable CI data.
 set -eu
 
-: "${HOMEBREW_UNITARES_TEST_UPDATE_DB_URL:?Set a dedicated updater database URL}"
+# The database comes from native.env, written by scripts/check-update.sh;
+# this script takes no database URL of its own.
 
 phase=${1:-basic}
 prefix=$(brew --prefix unitares)

@@ -51,9 +51,16 @@ never clears it.
 ## First-time setup
 
 This route needs UNITARES 4.1.0 or later; `brew info cirwel/unitares/unitares`
-shows the installed version. For an existing UNITARES database, follow the
-backed-up upgrade procedure below instead. The following is only for a **new
-machine with no UNITARES database**. Show the plan, then provision:
+shows the installed version. For older kegs, see
+[Kegs before 4.1.0](#kegs-before-410) below. For an existing UNITARES database,
+follow the backed-up upgrade procedure below instead. The following is only for
+a **new machine with no UNITARES database**.
+
+Provisioning connects to 127.0.0.1:5432 as your macOS user without a password,
+and that user must be a PostgreSQL superuser. Homebrew's default
+`postgresql@17` cluster is set up this way. A cluster that asks for a local
+password, or whose data directory is not `$(brew --prefix)/var/postgresql@17`,
+is refused. Show the plan, then provision:
 
 ```sh
 unitares setup --provision-db
@@ -73,7 +80,10 @@ shell, an existing `unitares` role or database, running writers, a nonempty
 Redis database 0, and a running Docker `postgres-age`. If the `docker` command is
 installed, Docker must be running so its containers can be listed. It never
 adopts, drops or resets existing data. Investigate a refusal instead of deleting
-what it found.
+what it found. While PostgreSQL is stopped, the plan cannot inspect it, so a
+refusal for an existing role or database can first appear at `--apply`. It then
+comes before any role, database or configuration is created, though PostgreSQL
+and Redis may already have been started.
 
 `$(brew --prefix)/var/unitares/native-setup.json` holds the credentials and the
 setup stage; keep it private. While it is unfinished, `unitares start`, `setup`
@@ -88,8 +98,10 @@ migration registry as proof that it is empty. A bootstrap interrupted after its
 SQL began is not replayed: preserve the database and journal and inspect them
 before selecting recovery steps. To use an existing, already bootstrapped
 UNITARES database instead, run `unitares setup --apply` and enter its URL at the
-hidden prompt; that command never creates or migrates a database. Verify and
-start:
+hidden prompt; that command never creates or migrates a database.
+
+Then start. `unitares start --check` only checks the configuration, services
+and ports and prints the startup plan; it does not inspect the database:
 
 ```sh
 unitares start --check
@@ -105,6 +117,21 @@ Dashboard: `http://127.0.0.1:8767/dashboard/`.
 See the upstream [MCP client guide](https://github.com/cirwel/unitares/blob/master/docs/integration/MCP_CLIENTS.md)
 to connect a client. These endpoints bind to loopback; Tailscale is not required
 for local use. User services need the Homebrew owner's logged-in session.
+
+### Kegs before 4.1.0
+
+Releases before 4.1.0 (including 3.6.0) have no `--provision-db`. Their
+first-time setup is the manual route in
+[this README at 84dd3e1](https://github.com/cirwel/homebrew-unitares/blob/84dd3e193367d450d61dff9ba0b93c11490b2c2c/README.md#first-time-setup).
+In short: `brew services start postgresql@17`; create a dedicated superuser role
+and its database with `createuser --superuser --pwprompt` and `createdb --owner`
+(both fail if the names exist; investigate rather than drop); run
+`unitares setup --apply` and enter that database's URL at the hidden prompt;
+then, with both writers stopped and only for that new empty database, run the
+installed `libexec/app/scripts/install/bootstrap_postgres.sh --apply` with the
+password in `PGPASSWORD` rather than in the URL. Start with the commands above.
+At 4.1.0 and later that bootstrap refuses a database that provisioning did not
+prepare.
 
 ## Daily use
 

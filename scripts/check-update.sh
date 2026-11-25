@@ -15,7 +15,17 @@ evidence=${HOMEBREW_UNITARES_ACCEPTANCE_DIR:-$(pwd)/validation/native-update-$(d
 mkdir -p "$evidence/update"
 export PATH="$prefix/libexec/venv/bin:$postgres_prefix/bin:$PATH"
 
-if grep -q -- '--provision-db' "$app/scripts/install/homebrew_services.py"; then
+# The workflow decides the route once from the installed keg (provision-db
+# from 4.1.0, manual before it) and passes it in UNITARES_SETUP_ROUTE.
+case "${UNITARES_SETUP_ROUTE:-}" in
+    provision-db|manual) ;;
+    *)
+        echo "Set UNITARES_SETUP_ROUTE to provision-db or manual" >&2
+        exit 2
+        ;;
+esac
+
+if [ "$UNITARES_SETUP_ROUTE" = provision-db ]; then
     # The README's first-time setup (UNITARES 4.1.0 and later): it starts
     # PostgreSQL and Redis, creates the unitares role and database, bootstraps
     # them and writes native.env. Read the generated URL back from native.env.
