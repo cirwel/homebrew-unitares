@@ -90,11 +90,15 @@ class Unitares < Formula
       NATIVE PREVIEW: keep the managed set pinned with
       `brew pin unitares unitares-lease-plane apache-age unitares-pgvector`.
       No migrations run during install, post_install, upgrade, or service launch.
-      Run `unitares setup` to inspect this installation and `unitares setup --apply`
-      to prepare missing private configuration at #{etc}/unitares/native.env,
-      with a generated shared lease bearer. Follow https://github.com/cirwel/homebrew-unitares#first-time-setup
-      for explicit database bootstrap. Then run `unitares start --check` and
-      `unitares start` to start the configured native services in order.
+      On a fresh machine, `unitares setup --provision-db` prints the plan and
+      `unitares setup --provision-db --apply` creates a dedicated non-superuser
+      `unitares` database, bootstraps it and writes private configuration to
+      #{etc}/unitares/native.env. Do not run `unitares setup --apply` first:
+      provisioning refuses an existing configuration. Details and the route for
+      an already bootstrapped database:
+      https://github.com/cirwel/homebrew-unitares#first-time-setup
+      Then run `unitares start --check` and `unitares start` to start the
+      configured native services in order.
       `unitares stop` stops both writers while retaining PostgreSQL/Redis.
       `unitares logs [server|lease-plane]` reads their logs.
       Run `unitares update --check` to inspect the locally cached native plan,
