@@ -6,8 +6,9 @@ and Redis. This is the recommended installation for an Apple Silicon desktop
 Mac; Docker remains the portable choice for servers, CI and non-macOS hosts.
 
 This is a **preview for Apple Silicon Macs**. Installation builds from source;
-no bottles are published. Database creation, bootstrap and upgrades remain
-explicit operator steps. The CLI handles configuration and service lifecycle.
+no bottles are published. Database creation, bootstrap and upgrades run only
+when you invoke their CLI commands. The CLI also handles configuration and
+service lifecycle.
 Intel macOS and Linux are not supported by this preview.
 
 ## Install
@@ -34,73 +35,63 @@ using the standard ports must be migrated deliberately before native startup.
 Installation does not copy its data or switch clients. The PostgreSQL-17-only
 vector formula conflicts with Homebrew's `pgvector`; reconcile existing
 extension ownership before installing, rather than overwrite-linking files.
+The same applies to `age` or `vector` files that a source install copied by
+hand into `$(brew --prefix)/lib/postgresql@17` or
+`$(brew --prefix)/share/postgresql@17/extension`.
+
+PostgreSQL 5432, Redis 6379 and the server 8767 are fixed on this route, and
+first-time setup also needs the lease plane's 8788. Setup and start refuse if
+another program listens on one of them, and there is no alternative-port
+option for the first three. Check first
+with `lsof -nP -iTCP:5432 -sTCP:LISTEN` (repeat for 6379, 8767 and 8788).
+Redis database 0 on 127.0.0.1:6379 is used too. First-time provisioning refuses
+it if it already holds keys, for example another installation's sessions, and
+never clears it.
 
 ## First-time setup
 
-For an existing UNITARES database, follow the backed-up upgrade procedure below.
-The following example is only for a **new, dedicated local database**.
-
-Start the selected PostgreSQL service and create a dedicated role/database.
-The password prompt does not put the password in shell history. AGE bootstrap
-requires PostgreSQL superuser privileges; this example uses a dedicated local
-superuser role, not a restricted production database account. Keep PostgreSQL
-bound to loopback.
+This route needs UNITARES 4.1.0 or later; `brew info cirwel/unitares/unitares`
+shows the installed version. For an existing UNITARES database, follow the
+backed-up upgrade procedure below instead. The following is only for a **new
+machine with no UNITARES database**. Show the plan, then provision:
 
 ```sh
-brew services start postgresql@17
-env -i PATH="$PATH" HOME="$HOME" \
-  "$(brew --prefix postgresql@17)/bin/createuser" --host=127.0.0.1 --port=5432 \
-  --username="$(id -un)" --superuser --pwprompt unitares_local
-env -i PATH="$PATH" HOME="$HOME" \
-  "$(brew --prefix postgresql@17)/bin/createdb" --host=127.0.0.1 --port=5432 \
-  --username="$(id -un)" --owner=unitares_local unitares_local
+unitares setup --provision-db
+unitares setup --provision-db --apply
 ```
 
-These commands intentionally fail if those names already exist. Investigate
-existing data instead of dropping or recreating it. Then configure UNITARES:
+The first command changes nothing. The second starts Homebrew PostgreSQL 17 and
+Redis if needed, creates a dedicated `unitares` login and `unitares` database
+(the login is not a superuser), bootstraps that database, checks its migrations
+and an AGE query, and only then writes `$(brew --prefix)/etc/unitares/native.env`
+(mode 600) with a generated password, installation ID and lease bearer. Both
+UNITARES writers stay stopped. The `governance` name in the package's
+`native.env.example` template is a placeholder that this route does not use.
+
+Provisioning refuses an existing `native.env`, a `DB_POSTGRES_URL` set in your
+shell, an existing `unitares` role or database, running writers, a nonempty
+Redis database 0, and a running Docker `postgres-age`. If the `docker` command is
+installed, Docker must be running so its containers can be listed. It never
+adopts, drops or resets existing data. Investigate a refusal instead of deleting
+what it found.
+
+`$(brew --prefix)/var/unitares/native-setup.json` holds the credentials and the
+setup stage; keep it private. While it is unfinished, `unitares start`, `setup`
+and `update` refuse. Resume an interrupted setup with:
 
 ```sh
-unitares setup --apply
-```
-
-At its private prompt, enter
-`postgresql://unitares_local:YOUR_URL_ENCODED_PASSWORD@127.0.0.1:5432/unitares_local`.
-URL-encode special characters in the password. Setup creates
-`$(brew --prefix)/etc/unitares/native.env` with mode 600 and a generated shared
-lease bearer. Existing configuration is preserved. Setup does not create or
-migrate a database; a successful setup command alone does not mean ready.
-
-Only for the new empty database above, run the installed bootstrap. This block
-loads the private configuration and keeps the password out of database command
-arguments. Both UNITARES writers must remain stopped.
-
-```sh
-(
-  set -a
-  . "$(brew --prefix)/etc/unitares/native.env"
-  set +a
-  export PATH="$(brew --prefix unitares)/libexec/venv/bin:$(brew --prefix postgresql@17)/bin:$PATH"
-  python - "$(brew --prefix unitares)/libexec/app/scripts/install/bootstrap_postgres.sh" <<'PY'
-import os, subprocess, sys
-from urllib.parse import urlsplit, urlunsplit, unquote
-env = {key: value for key, value in os.environ.items() if not key.startswith("PG")}
-url = urlsplit(env["DB_POSTGRES_URL"])
-env["PGPASSWORD"] = unquote(url.password or "")
-authority = url.netloc.split("@", 1)[-1]
-if url.username:
-    authority = url.username + "@" + authority
-env["DB_POSTGRES_URL"] = urlunsplit((url.scheme, authority, url.path, url.query, url.fragment))
-subprocess.run(["bash", sys.argv[1], "--apply"], env=env, check=True)
-PY
-)
+unitares setup --provision-db --apply --resume
 ```
 
 Never run fresh bootstrap over an existing database or use absence of a
-migration registry as proof that it is empty. Preserve and inspect an
-interrupted installation before selecting recovery steps. Verify and start:
+migration registry as proof that it is empty. A bootstrap interrupted after its
+SQL began is not replayed: preserve the database and journal and inspect them
+before selecting recovery steps. To use an existing, already bootstrapped
+UNITARES database instead, run `unitares setup --apply` and enter its URL at the
+hidden prompt; that command never creates or migrates a database. Verify and
+start:
 
 ```sh
-unitares setup
 unitares start --check
 unitares start
 unitares health

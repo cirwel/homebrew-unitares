@@ -4,7 +4,6 @@
 # the candidate, so the installed command must discover and apply a real update.
 set -eu
 
-: "${HOMEBREW_UNITARES_TEST_UPDATE_DB_URL:?Set a dedicated updater database URL}"
 : "${HOMEBREW_UNITARES_EXPECTED_SERVER_REVISION:?Set the CI-only target revision}"
 
 prefix=$(brew --prefix unitares)
@@ -16,16 +15,40 @@ evidence=${HOMEBREW_UNITARES_ACCEPTANCE_DIR:-$(pwd)/validation/native-update-$(d
 mkdir -p "$evidence/update"
 export PATH="$prefix/libexec/venv/bin:$postgres_prefix/bin:$PATH"
 
-DB_POSTGRES_URL=$HOMEBREW_UNITARES_TEST_UPDATE_DB_URL \
-    unitares setup --apply --non-interactive
+if grep -q -- '--provision-db' "$app/scripts/install/homebrew_services.py"; then
+    # The README's first-time setup (UNITARES 4.1.0 and later): it starts
+    # PostgreSQL and Redis, creates the unitares role and database, bootstraps
+    # them and writes native.env. Read the generated URL back from native.env.
+    provisioned=1
+    unitares setup --provision-db
+    unitares setup --provision-db --apply
+    UPDATE_DB_URL=$("$python" - "$app" <<'PY'
+import sys
 
-"$python" - "$app/scripts/install/bootstrap_postgres.sh" <<'PY'
+sys.path.insert(0, sys.argv[1])
+from scripts.install.homebrew_services import Homebrew, read_config
+
+print(read_config(Homebrew().config)["DB_POSTGRES_URL"])
+PY
+)
+else
+    # Kegs before 4.1.0: a manually created superuser database and a bare
+    # bootstrap. Remove this branch once main packages 4.1.0 or later.
+    provisioned=0
+    : "${HOMEBREW_UNITARES_TEST_UPDATE_DB_URL:?Set a dedicated updater database URL}"
+    UPDATE_DB_URL=$HOMEBREW_UNITARES_TEST_UPDATE_DB_URL
+    DB_POSTGRES_URL=$UPDATE_DB_URL \
+        unitares setup --apply --non-interactive
+fi
+export UPDATE_DB_URL
+
+UNITARES_PROVISIONED=$provisioned "$python" - "$app/scripts/install/bootstrap_postgres.sh" <<'PY'
 import os
 import subprocess
 import sys
 from urllib.parse import unquote, urlsplit, urlunsplit
 
-url = urlsplit(os.environ["HOMEBREW_UNITARES_TEST_UPDATE_DB_URL"])
+url = urlsplit(os.environ["UPDATE_DB_URL"])
 env = {key: value for key, value in os.environ.items() if not key.startswith("PG")}
 env["PGPASSWORD"] = unquote(url.password or "")
 authority = url.netloc.split("@", 1)[-1]
@@ -34,7 +57,17 @@ if url.username:
 env["DB_POSTGRES_URL"] = urlunsplit(
     (url.scheme, authority, url.path, url.query, url.fragment)
 )
-subprocess.run(["bash", sys.argv[1], "--apply"], env=env, check=True)
+if os.environ["UNITARES_PROVISIONED"] == "1":
+    # Provisioning already bootstrapped; its application login must not be
+    # a superuser.
+    rolsuper = subprocess.run(
+        ["psql", "-X", "-Atq", "-v", "ON_ERROR_STOP=1", env["DB_POSTGRES_URL"],
+         "-c", "SELECT rolsuper FROM pg_roles WHERE rolname = current_user"],
+        env=env, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert rolsuper == "f", rolsuper
+else:
+    subprocess.run(["bash", sys.argv[1], "--apply"], env=env, check=True)
 subprocess.run(
     [
         "psql",
@@ -97,7 +130,7 @@ writers = json.loads((evidence / "writers.json").read_text())
 assert {item["name"] for item in writers} == {"unitares", "unitares-lease-plane"}
 assert all(item.get("running") for item in writers), writers
 
-url = urlsplit(os.environ["HOMEBREW_UNITARES_TEST_UPDATE_DB_URL"])
+url = urlsplit(os.environ["UPDATE_DB_URL"])
 env = {key: value for key, value in os.environ.items() if not key.startswith("PG")}
 env["PGPASSWORD"] = unquote(url.password or "")
 authority = url.netloc.split("@", 1)[-1]
